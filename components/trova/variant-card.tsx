@@ -58,11 +58,11 @@ export function VariantCard({
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <PillarMeter plain="What you own" term="Structure" value={s.structure.score} detail={redemptionLabel(variant.stockVariantTier)} />
+        <PillarMeter plain="Ownership" term="what you own" value={s.ownership.score} detail={redemptionLabel(variant.stockVariantTier)} />
         <PillarMeter
-          plain="Can you get out"
-          term="Market health"
-          value={s.market.score}
+          plain="Exit"
+          term="can you get out"
+          value={s.exit.score}
           detail={`${usd(variant.liquidityUsd, { compact: true })} liquidity`}
         />
       </div>

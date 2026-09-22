@@ -129,7 +129,7 @@ export interface InstrumentInfo {
 export type RedemptionBasis = "reported" | "class-peers" | "neutral";
 
 /** "What do I actually own?" — slow-changing, matters most for long-term holds. */
-export interface StructureComponents {
+export interface OwnershipComponents {
   redemption: number;           // share 100 / cash 75 / not redeemable 30 / unreported: class peers or neutral 50
   redemptionReported: boolean;
   redemptionBasis: RedemptionBasis;
@@ -137,7 +137,7 @@ export interface StructureComponents {
 }
 
 /** "Can I get in and out at a fair price?" — one factor, calibrated against tradable peers. */
-export interface MarketComponents {
+export interface ExitComponents {
   liquidity: number;            // 0..100, 50 = median tradable variant
   activity: number;             // trades + volume (24h)
   holders: number;
@@ -165,8 +165,8 @@ export interface TrovaScore {
   notRatedReason?: string;
   instrument: InstrumentInfo;
   confidence: Confidence;       // how complete the underlying data is
-  structure: PillarScore<StructureComponents>;
-  market: PillarScore<MarketComponents>;
+  ownership: PillarScore<OwnershipComponents>;
+  exit: PillarScore<ExitComponents>;
   tier: Tier;                   // neutral display label only — never scored
   advisory: TxzAdvisory | null;
   routable: boolean;            // can Trova route a trade into it right now
@@ -228,8 +228,8 @@ export interface VariantSnapshot {
   score: number | null;
   grade: Rating;
   instrumentClass: InstrumentClass;
-  structure: number;
-  market: number;
+  ownership: number;
+  exit: number;
   tier: Tier;
   stockVariantTier: StockVariantTier | null;
   advisoryStatus: AdvisoryStatus | null;
@@ -239,7 +239,7 @@ export interface VariantSnapshot {
 
 export type SignalKind =
   // change over time (lib/signals.ts, from daily snapshots)
-  | "grade-change" | "structure-change" | "market-change" | "redemption-change"
+  | "grade-change" | "ownership-change" | "exit-change" | "redemption-change"
   | "advisory" | "tier-change" | "routability-change"
   // current portfolio (lib/portfolio.ts)
   | "concentration" | "speculative" | "not-routable" | "better-variant" | "stale-price";
@@ -317,7 +317,7 @@ export interface PortfolioSummary {
   cashValueUsd: number;
   cash: CashBalance[];
   otherTokens: number;          // tokens outside Trova's curated universe (not scored)
-  scores: { overall: number; structure: number; market: number }; // value-weighted 0..100, rated holdings only
+  scores: { overall: number; ownership: number; exit: number }; // value-weighted 0..100, rated holdings only
   needsAttentionUsd: number;    // value in holdings that are not routable, grade D, not rated, or under an advisory
   speculativeUsd: number;       // value in speculative instruments (pre-IPO exposure)
   allocationByGrade: Record<Rating, number>;    // % of holdings value

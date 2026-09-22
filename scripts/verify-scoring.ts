@@ -94,7 +94,7 @@ check("leveraged kind is leveraged", () => {
 
 check("pre-IPO exposure is D through the rubric even with a perfect market", () => {
   const s = scoreVariant(variant({ name: "OpenAI PreStocks", label: "PreStocks", stockVariantTier: "not_redeemable", market: MAX }));
-  assert.equal(s.structure.components.product, 0);
+  assert.equal(s.ownership.components.product, 0);
   assert.equal(s.grade, "D");
   assert.ok(s.score! < 50, `score ${s.score}`);
 });
@@ -136,8 +136,8 @@ check("no trades in 24h is not routable", () => {
 check("unreported redemption on a pre-IPO token uses its class peers, so silence can't beat an explicit 'not redeemable'", () => {
   const silent = scoreVariant(variant({ mint: "tk", name: "T-Kalshi", symbol: "tKalshi", label: "tKalshi", stockVariantTier: null }));
   const explicit = scoreVariant(variant({ mint: "ps", name: "Kalshi PreStocks", symbol: "KALSHI", label: "PreStocks", stockVariantTier: "not_redeemable" }));
-  assert.equal(silent.structure.components.redemptionBasis, "class-peers");
-  assert.equal(silent.structure.components.redemption, 30);
+  assert.equal(silent.ownership.components.redemptionBasis, "class-peers");
+  assert.equal(silent.ownership.components.redemption, 30);
   assert.equal(silent.score, explicit.score);
   assert.match(redemptionNote(silent)!, /most conservative value reported by other pre-IPO tokens/);
   assert.equal(redemptionNote(explicit), null);
@@ -145,8 +145,8 @@ check("unreported redemption on a pre-IPO token uses its class peers, so silence
 
 check("unreported redemption with no reporting peers stays neutral", () => {
   const s = scoreVariant(variant({ kind: "leveraged", symbol: "TQQQx", stockVariantTier: null }));
-  assert.equal(s.structure.components.redemptionBasis, "neutral");
-  assert.equal(s.structure.components.redemption, 50);
+  assert.equal(s.ownership.components.redemptionBasis, "neutral");
+  assert.equal(s.ownership.components.redemption, 50);
   assert.match(redemptionNote(s)!, /neutrally/);
 });
 

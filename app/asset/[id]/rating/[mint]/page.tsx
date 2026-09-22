@@ -19,9 +19,9 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
   if (!detail || !variant) notFound();
 
   const s = variant.score;
-  const structure = s.structure.components;
-  const market = s.market.components;
-  const combined = Math.round(Math.sqrt(Math.max(s.structure.score, 1) * Math.max(s.market.score, 1)));
+  const ownership = s.ownership.components;
+  const exit = s.exit.components;
+  const combined = Math.round(Math.sqrt(Math.max(s.ownership.score, 1) * Math.max(s.exit.score, 1)));
 
   return (
     <Shell
@@ -37,10 +37,6 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
           <span>
             {detail.asset.name} · {variant.issuer}
           </span>
-          <span>·</span>
-          <span>scored exactly like every other token</span>
-          <span>·</span>
-          <span>Method {s.methodVersion}</span>
         </span>
       }
       actions={
@@ -57,18 +53,18 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
         <div className="grid gap-4 md:grid-cols-2">
           <Card className="flex flex-col gap-4 p-5">
             <header className="flex items-baseline gap-2.5">
-              <h2 className="font-display text-[15px] font-semibold">What you own</h2>
-              <span className="eyebrow">Structure</span>
-              <span className="font-display tabular ml-auto text-[26px] font-bold">{s.structure.score}</span>
+              <h2 className="font-display text-[15px] font-semibold">Ownership</h2>
+              <span className="eyebrow">what you own</span>
+              <span className="font-display tabular ml-auto text-[26px] font-bold">{s.ownership.score}</span>
             </header>
 
             <Component
               label="Can you swap it for the real share?"
               term="Redemption right"
               weight="70% of this pillar"
-              value={structure.redemption}
+              value={ownership.redemption}
               note={
-                structure.redemptionReported
+                ownership.redemptionReported
                   ? `The issuer documents it: ${redemptionLabel(variant.stockVariantTier).toLowerCase()}. Swapping for the real share scores 100, cash value 75, no redemption 30.`
                   : (variant.redemptionNote ?? "Not reported by the issuer.")
               }
@@ -78,11 +74,11 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
               label="What the token gives you"
               term="Product rights"
               weight="30% of this pillar"
-              value={structure.product}
+              value={ownership.product}
               note={
-                structure.product === 0
+                ownership.product === 0
                   ? "Exposure through an SPV: no ownership, voting, dividend or information rights."
-                  : structure.product === 40
+                  : ownership.product === 40
                     ? "Borrowed exposure that resets daily — it drifts from the underlying over time."
                     : "Full economic exposure to one share."
               }
@@ -103,16 +99,16 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
 
           <Card className="flex flex-col gap-4 p-5">
             <header className="flex items-baseline gap-2.5">
-              <h2 className="font-display text-[15px] font-semibold">Can you get out</h2>
-              <span className="eyebrow">Market health</span>
-              <span className="font-display tabular ml-auto text-[26px] font-bold">{s.market.score}</span>
+              <h2 className="font-display text-[15px] font-semibold">Exit</h2>
+              <span className="eyebrow">can you sell it</span>
+              <span className="font-display tabular ml-auto text-[26px] font-bold">{s.exit.score}</span>
             </header>
 
-            <Component label="Depth of the market" term="Liquidity" value={market.liquidity} note={`${usd(variant.liquidityUsd, { compact: true })} on-chain`} />
-            <Component label="How much it actually trades" term="Activity" value={market.activity} note={`${usd(variant.volume24hUsd, { compact: true })} in 24h`} />
-            <Component label="How many people hold it" term="Holders" value={market.holders} note={`${count(variant.holders)} wallets`} />
-            {market.execution != null ? (
-              <Component label="Quality of the fills" term="Execution" value={market.execution} note="fills, fees and how much flow is bots" />
+            <Component label="Depth of the market" term="Liquidity" value={exit.liquidity} note={`${usd(variant.liquidityUsd, { compact: true })} on-chain`} />
+            <Component label="How much it actually trades" term="Activity" value={exit.activity} note={`${usd(variant.volume24hUsd, { compact: true })} in 24h`} />
+            <Component label="How many people hold it" term="Holders" value={exit.holders} note={`${count(variant.holders)} wallets`} />
+            {exit.execution != null ? (
+              <Component label="Quality of the fills" term="Execution" value={exit.execution} note="fills, fees and how much flow is bots" />
             ) : (
               <div className="flex flex-col gap-1">
                 <span className="text-[13px] font-semibold">Quality of the fills</span>
@@ -127,7 +123,7 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
         <div className="grid gap-4 md:grid-cols-[1fr_320px]">
           <Card className="flex flex-wrap items-center gap-x-5 gap-y-3 p-5">
             <span className="font-display text-[17px] font-semibold tabular">
-              √({s.structure.score} × {s.market.score}) = {combined}
+              √({s.ownership.score} × {s.exit.score}) = {combined}
             </span>
             <p className="min-w-[240px] flex-1 text-[12px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
               The two halves are multiplied, not averaged, so neither can hide the other: perfect paperwork with a
@@ -161,11 +157,11 @@ export default async function RatingPage({ params }: { params: Promise<{ id: str
           <span className="eyebrow">What would move this rating</span>
           <ul className="flex flex-col gap-1.5 text-[12px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
             <li>
-              • A change in what you can redeem it for moves <b style={{ color: "var(--ink)" }}>What you own</b> the same day
+              • A change in what you can redeem it for moves <b style={{ color: "var(--ink)" }}>Ownership</b> the same day
               it&apos;s reported.
             </li>
             <li>
-              • Liquidity or trading falling away moves <b style={{ color: "var(--ink)" }}>Can you get out</b> — and if it stops
+              • Liquidity or trading falling away moves <b style={{ color: "var(--ink)" }}>Exit</b> — and if it stops
               trading entirely, the token stops being tradable here at all.
             </li>
             <li>• A warning from our sources caps the rating outright, whatever the market is doing.</li>

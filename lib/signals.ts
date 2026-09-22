@@ -1,6 +1,6 @@
 // "What changed" signals from daily snapshots, for long-term holders. Factual only, never predictive.
 // Structural changes (advisory, redemption, instrument class, tier) fire on the snapshot they appear.
-// Noisy changes (grade, tradability, market health) must hold for PERSISTENCE consecutive snapshots,
+// Noisy changes (grade, tradability, exit score) must hold for PERSISTENCE consecutive snapshots,
 // so borderline flicker never alerts. Grade changes caused by a method-version change are ignored.
 
 import { selectRows } from "./supabase-rest";
@@ -20,7 +20,7 @@ export interface SnapshotPoint {
   method_version: string;
   score: number | null;
   grade: string;
-  market: number;
+  exit: number;
   tier: string | null;
   stock_variant_tier: string | null;
   advisory_status: string | null;
@@ -31,7 +31,7 @@ export interface SnapshotPoint {
 }
 
 const COLUMNS = [
-  "snapshot_date", "mint", "asset_id", "symbol", "method_version", "score", "grade", "market", "tier",
+  "snapshot_date", "mint", "asset_id", "symbol", "method_version", "score", "grade", "exit:market", "tier",
   "stock_variant_tier", "advisory_status", "advisory_reason", "instrument_class", "routable", "not_routable_reason",
 ].join(",");
 
@@ -68,16 +68,16 @@ function confirmedChange<K extends "grade" | "routable">(h: SnapshotPoint[], i: 
 }
 
 /** Market health moved ≥ MARKET_CHANGE_POINTS from its baseline median and held for PERSISTENCE snapshots. */
-function marketShift(h: SnapshotPoint[], i: number) {
+function exitShift(h: SnapshotPoint[], i: number) {
   const start = i - PERSISTENCE - MARKET_BASELINE_SNAPSHOTS + 1;
   if (start < 0) return null;
-  const baseline = median(h.slice(start, i - PERSISTENCE + 1).map((p) => p.market));
+  const baseline = median(h.slice(start, i - PERSISTENCE + 1).map((p) => p.exit));
   const run = h.slice(i - PERSISTENCE + 1, i + 1);
   const justBefore = h[i - PERSISTENCE];
   for (const dir of [-1, 1] as const) {
     const beyond = (m: number) => (dir < 0 ? m <= baseline - MARKET_CHANGE_POINTS : m >= baseline + MARKET_CHANGE_POINTS);
-    if (run.every((p) => beyond(p.market)) && !beyond(justBefore.market)) {
-      return { baseline: Math.round(baseline), to: h[i].market, dir };
+    if (run.every((p) => beyond(p.exit)) && !beyond(justBefore.exit)) {
+      return { baseline: Math.round(baseline), to: h[i].exit, dir };
     }
   }
   return null;
@@ -115,7 +115,7 @@ export function detectSignals(history: SnapshotPoint[]): Signal[] {
 
     if (cur.instrument_class !== prev.instrument_class) {
       out.push({
-        ...base, kind: "structure-change", severity: cur.instrument_class === "pre-ipo-exposure" ? "warn" : "info",
+        ...base, kind: "ownership-change", severity: cur.instrument_class === "pre-ipo-exposure" ? "warn" : "info",
         message: `${cur.symbol} is now classified as "${classLabel(cur.instrument_class)}" (was "${classLabel(prev.instrument_class)}").`,
         from: prev.instrument_class, to: cur.instrument_class,
       });
@@ -146,12 +146,12 @@ export function detectSignals(history: SnapshotPoint[]): Signal[] {
         : { ...base, kind: "routability-change", severity: "warn", message: `${cur.symbol} is no longer tradable through Trova${cur.not_routable_reason ? ` — ${cur.not_routable_reason}` : ""}.`, from: "tradable", to: "not tradable" });
     }
 
-    const market = marketShift(history, i);
-    if (market) {
+    const exit = exitShift(history, i);
+    if (exit) {
       out.push({
-        ...base, kind: "market-change", severity: market.dir < 0 ? "warn" : "info",
-        message: `${cur.symbol} market health ${market.dir < 0 ? "fell" : "rose"} from about ${market.baseline} to ${market.to}, held for ${PERSISTENCE} snapshots.`,
-        from: String(market.baseline), to: String(market.to),
+        ...base, kind: "exit-change", severity: exit.dir < 0 ? "warn" : "info",
+        message: `${cur.symbol} exit score ${exit.dir < 0 ? "fell" : "rose"} from about ${exit.baseline} to ${exit.to}, held for ${PERSISTENCE} snapshots.`,
+        from: String(exit.baseline), to: String(exit.to),
       });
     }
   }
@@ -167,7 +167,7 @@ export function sortSignals(signals: Signal[]): Signal[] {
 export async function getChangeSignals(opts: { mints?: string[]; days?: number } = {}) {
   const days = Math.max(1, Math.min(MAX_SIGNAL_DAYS, Math.round(opts.days ?? 30)));
   const now = Date.now();
-  // Extra lookback so persistence and market baselines have data at the start of the window.
+  // Extra lookback so persistence and exit baselines have data at the start of the window.
   const since = isoDay(now - (days + MARKET_BASELINE_SNAPSHOTS + PERSISTENCE) * 86_400_000);
   const windowStart = dayStart(isoDay(now - days * 86_400_000));
 

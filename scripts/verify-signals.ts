@@ -22,7 +22,7 @@ function check(name: string, fn: () => void) {
 
 const BASE: SnapshotPoint = {
   snapshot_date: "2026-09-01", mint: "Mint111", asset_id: "tesla", symbol: "TSLAx", method_version: "v3.2",
-  score: 87, grade: "A", market: 80, tier: "tier2", stock_variant_tier: "cash_redeemable",
+  score: 87, grade: "A", exit: 80, tier: "tier2", stock_variant_tier: "cash_redeemable",
   advisory_status: null, advisory_reason: null, instrument_class: "backed-tracker", routable: true, not_routable_reason: null,
 };
 
@@ -54,7 +54,7 @@ check("redemption downgrade → warn; upgrade → info", () => {
 });
 
 check("reclassified as pre-IPO exposure → warn", () => {
-  const s = kinds(history({}, { instrument_class: "pre-ipo-exposure" }), "structure-change");
+  const s = kinds(history({}, { instrument_class: "pre-ipo-exposure" }), "ownership-change");
   assert.equal(s.length, 1);
   assert.equal(s[0].severity, "warn");
 });
@@ -90,16 +90,16 @@ check("losing tradability for 3 snapshots → warn; a one-day blip → nothing",
   assert.equal(kinds(history({}, { routable: false }, {}, {}), "routability-change").length, 0);
 });
 
-check("market health drop of 15+ vs 7-snapshot baseline, held 3 snapshots → one warn", () => {
-  const h = history(...Array(7).fill({ market: 80 }), { market: 60 }, { market: 60 }, { market: 60 }, { market: 60 });
-  const s = kinds(h, "market-change");
+check("exit score drop of 15+ vs 7-snapshot baseline, held 3 snapshots → one warn", () => {
+  const h = history(...Array(7).fill({ exit: 80 }), { exit: 60 }, { exit: 60 }, { exit: 60 }, { exit: 60 });
+  const s = kinds(h, "exit-change");
   assert.equal(s.length, 1);
   assert.equal(s[0].severity, "warn");
   assert.equal(s[0].from, "80");
 });
 
-check("market wobble under 15 points never alerts", () => {
-  assert.equal(kinds(history(...Array(7).fill({ market: 80 }), { market: 70 }, { market: 70 }, { market: 70 }), "market-change").length, 0);
+check("exit wobble under 15 points never alerts", () => {
+  assert.equal(kinds(history(...Array(7).fill({ exit: 80 }), { exit: 70 }, { exit: 70 }, { exit: 70 }), "exit-change").length, 0);
 });
 
 check("single snapshot → no signals", () => {

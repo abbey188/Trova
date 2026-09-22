@@ -308,7 +308,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     cashValueUsd: cash.reduce((s, c) => s + (c.valueUsd ?? 0), 0),
     cash,
     otherTokens,
-    scores: { overall: scored.overall, structure: scored.structure, market: scored.market },
+    scores: { overall: scored.overall, ownership: scored.ownership, exit: scored.exit },
     needsAttentionUsd: scored.needsAttentionUsd,
     speculativeUsd: scored.speculativeUsd,
     allocationByGrade: shareBy<Rating>(holdings, ["A", "B", "C", "D", "NR"], (h) => h.variant.score.grade),

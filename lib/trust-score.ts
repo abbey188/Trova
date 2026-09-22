@@ -2,13 +2,13 @@
 // separately, plus a combined score.
 //
 //   Instrument     What the token legally is (direct share claim … pre-IPO SPV exposure).
-//                  Classified first; the class sets the product-rights part of Structure.
-//   Structure      "What do I actually own?"  redemption right + product rights
+//                  Classified first; the class sets the product-rights part of Ownership.
+//   Ownership      "What do I actually own?"  redemption right + product rights
 //   Market health  "Can I get in and out?"    liquidity, activity, holders, execution
 //   Trova Score    geometric mean of the two, so a strong pillar can't hide a weak one
 //
 // No instrument class is capped: every grade comes from the rubric, so a token whose
-// structure improves (e.g. gains a redemption path) scores higher. Only tokens.xyz
+// ownership improves (e.g. gains a redemption path) scores higher. Only tokens.xyz
 // advisories hard-cap. Scores near a grade cutoff are marked borderline.
 //
 // Method follows rating / composite-indicator practice ("not rated", borderline signals;
@@ -21,8 +21,8 @@
 // Scores update as more information becomes public. Pure functions, server-side.
 
 import type {
-  Confidence, Grade, InstrumentClass, InstrumentInfo, MarketComponents, PillarScore, Rating,
-  ScoreFlag, StockVariantTier, StructureComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
+  Confidence, Grade, InstrumentClass, InstrumentInfo, ExitComponents, PillarScore, Rating,
+  ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
 export const METHOD_VERSION = "v3.2-2026-09-15";
@@ -204,10 +204,10 @@ export function classifyInstrument(v: TxzVariant, ctx: ScoreContext = {}): Instr
   return info;
 }
 
-function structurePillar(v: TxzVariant, instrument: InstrumentInfo): PillarScore<StructureComponents> {
+function ownershipPillar(v: TxzVariant, instrument: InstrumentInfo): PillarScore<OwnershipComponents> {
   const redemptionReported = v.stockVariantTier != null;
   const peers = REDEMPTION_CLASS_PEERS[instrument.class];
-  const components: StructureComponents = {
+  const components: OwnershipComponents = {
     redemption: redemptionReported ? REDEMPTION[v.stockVariantTier!] : peers ? REDEMPTION[peers.tier] : REDEMPTION_UNREPORTED,
     redemptionReported,
     redemptionBasis: redemptionReported ? "reported" : peers ? "class-peers" : "neutral",
@@ -217,10 +217,10 @@ function structurePillar(v: TxzVariant, instrument: InstrumentInfo): PillarScore
   return { score, grade: gradeOf(score), components };
 }
 
-function marketPillar(v: TxzVariant): PillarScore<MarketComponents> {
+function exitPillar(v: TxzVariant): PillarScore<ExitComponents> {
   const m = v.market;
   const exec = v.executionQuality?.executionScore;
-  const components: MarketComponents = {
+  const components: ExitComponents = {
     liquidity: round(anchored(m.liquidity, ANCHORS.liquidityUsd)),
     // trades and volume correlate 0.96 → one indicator, not two
     activity: round((anchored(m.trade24h, ANCHORS.trades24h) + anchored(m.volume24hUSD, ANCHORS.volume24hUsd)) / 2),
@@ -235,8 +235,8 @@ function marketPillar(v: TxzVariant): PillarScore<MarketComponents> {
 
 export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore {
   const instrument = classifyInstrument(v, ctx);
-  const structure = structurePillar(v, instrument);
-  const market = marketPillar(v);
+  const ownership = ownershipPillar(v, instrument);
+  const exit = exitPillar(v);
   const advisory = v.advisory ?? null;
   const status = advisory?.status;
 
@@ -247,7 +247,7 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
 
   // Confidence = share of key inputs actually reported (missing data ≠ risk, but less certainty).
   const reported = [
-    structure.components.redemptionReported,
+    ownership.components.redemptionReported,
     issuerNamed || issuerConfirmed,
     v.executionQuality != null,
     (v.market.holder ?? 0) > 0,
@@ -256,15 +256,15 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
   const confidence: Confidence = reported >= 4 ? "high" : reported === 3 ? "medium" : "low";
 
   // Not rated: no redemption path reported, no trading, and almost nothing else reported.
-  const rated = !(!structure.components.redemptionReported && !traded24h && reported <= 1);
+  const rated = !(!ownership.components.redemptionReported && !traded24h && reported <= 1);
   const notRatedReason = rated ? undefined : "Not rated — too little reported data to score honestly";
 
   // Equal-weight geometric mean: non-compensatory, so e.g. perfect redemption can't mask no liquidity.
-  let raw = Math.sqrt(Math.max(structure.score, 1) * Math.max(market.score, 1));
+  let raw = Math.sqrt(Math.max(ownership.score, 1) * Math.max(exit.score, 1));
   if (status) {
     raw = Math.min(raw, ADVISORY_CAP[status]);
-    structure.score = Math.min(structure.score, ADVISORY_CAP[status]);
-    structure.grade = gradeOf(structure.score);
+    ownership.score = Math.min(ownership.score, ADVISORY_CAP[status]);
+    ownership.grade = gradeOf(ownership.score);
   }
   const score = rated ? round(raw) : null;
   const grade: Rating = score == null ? "NR" : gradeOf(score);
@@ -275,7 +275,7 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
   if (instrument.class === "pre-ipo-exposure") flags.push("pre-ipo-exposure");
   if (instrument.speculative) flags.push("speculative");
   if (v.stockVariantTier === "not_redeemable") flags.push("not-redeemable");
-  if (!structure.components.redemptionReported) flags.push("redemption-unreported");
+  if (!ownership.components.redemptionReported) flags.push("redemption-unreported");
   if (v.kind === "leveraged") flags.push("leveraged");
   if (liquidityUsd < MIN_LIQUIDITY_USD) flags.push("thin-liquidity");
   if (!traded24h) flags.push("no-recent-trades");
@@ -301,8 +301,8 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
     notRatedReason,
     instrument,
     confidence,
-    structure,
-    market,
+    ownership,
+    exit,
     tier: tierOf(v),
     advisory,
     routable: !notRoutableReason,
@@ -317,7 +317,7 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
 
 export interface RankedVariant { variant: TxzVariant; score: TrovaScore }
 
-/** Rank an asset's variants: routable first, then rated, combined score, Structure, tokens.xyz primary. */
+/** Rank an asset's variants: routable first, then rated, combined score, Ownership, tokens.xyz primary. */
 export function rankVariants(
   variants: TxzVariant[],
   ctxFor: (v: TxzVariant) => ScoreContext = () => ({}),
@@ -327,7 +327,7 @@ export function rankVariants(
     .sort((a, b) =>
       Number(b.score.routable) - Number(a.score.routable)
       || (b.score.score ?? -1) - (a.score.score ?? -1)
-      || b.score.structure.score - a.score.structure.score
+      || b.score.ownership.score - a.score.ownership.score
       || Number(b.score.isPrimary) - Number(a.score.isPrimary));
 }
 
@@ -353,8 +353,8 @@ export function portfolioScores(items: { valueUsd: number; score: TrovaScore }[]
   const sum = (pred: (s: TrovaScore) => boolean) => items.filter((i) => pred(i.score)).reduce((s, i) => s + i.valueUsd, 0);
   return {
     overall: avg((s) => s.score!),
-    structure: avg((s) => s.structure.score),
-    market: avg((s) => s.market.score),
+    ownership: avg((s) => s.ownership.score),
+    exit: avg((s) => s.exit.score),
     needsAttentionUsd: sum(needsAttention),
     speculativeUsd: sum((s) => s.instrument.speculative),
   };
@@ -362,7 +362,7 @@ export function portfolioScores(items: { valueUsd: number; score: TrovaScore }[]
 
 /** Plain-language note on how redemption was scored when it wasn't reported (null when reported). */
 export function redemptionNote(s: TrovaScore): string | null {
-  const basis = s.structure.components.redemptionBasis;
+  const basis = s.ownership.components.redemptionBasis;
   if (basis === "class-peers") {
     const peers = REDEMPTION_CLASS_PEERS[s.instrument.class]!;
     return `Redemption not reported — treated as ${TIER_WORDS[peers.tier]}, the most conservative value reported by other ${peers.peers}.`;
