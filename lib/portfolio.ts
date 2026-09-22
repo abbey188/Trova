@@ -6,18 +6,32 @@
 import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
+import { exitCost } from "./jupiter";
+import { withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals, sortSignals } from "./signals";
 import { getVariantMarkets, getVariants, resolveIssuer, type TxzVariantMarket } from "./tokens-xyz";
 import { METHOD_VERSION, pickBest, portfolioScores, rankVariants, type RankedVariant, type ScoreContext } from "./trust-score";
 import { getCuratedUniverse, type UniverseEntry } from "./universe";
-import type { Asset, CashBalance, Holding, PortfolioSummary, Rating, Signal, Tier, TrovaScore, TxzVariant, Variant } from "./types";
+import type { Asset, CashBalance, ExitQuote, Holding, PortfolioSummary, Rating, Signal, Tier, TrovaScore, TxzVariant, Variant } from "./types";
 
+// Cash = SOL (fees) plus the USD stablecoins. Each mint below was resolved against tokens.xyz on
+// 2026-09-22 and came back category "stablecoin" with the symbol shown. Euro-denominated stables are
+// deliberately absent: the portfolio totals in dollars. Anything else a wallet holds is neither cash
+// nor a tokenized stock, and is counted in `otherTokens` rather than valued.
 const CASH_MINTS: Record<string, string> = {
   [NATIVE_SOL_MINT]: "SOL",
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
   Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: "USDT",
+  "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo": "PYUSD",
+  USDSwr9ApdHk5bvJKMjzff41FfuX8bSxdKcR81vTwcA: "USDS",
+  DEkqHyPN7GMRJ5cArtQFAWefqbZb33Hyf6s5iCwjEonT: "USDe",
+  "9zNQRsGLjNKwCUU5Gq5LR8beUCPzQMVMqKAi3SSZh54u": "FDUSD",
+  "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": "USDG",
 };
+
+// Exit cost costs two Jupiter quotes per holding, so only the largest positions are measured.
+const EXIT_QUOTED_HOLDINGS = 10;
 
 export const CONCENTRATION_SHARE = 0.5;   // one variant ≥ 50% of tokenized holdings → concentration signal
 const MAX_LISTED = 3;                     // beyond this many same-kind signals, summarise instead of listing
@@ -191,13 +205,17 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     p.catch((e) => { warnings.push(`${label} unavailable: ${message(e)}`); return null; });
   const universeErrors: { scope: string; error: string }[] = [];
 
-  const [{ solBalance, tokens }, universe, securities, backpackMints, referencePrices] = await Promise.all([
+  const [{ solBalance, tokens: rawTokens }, universe, securities, backpackMints, referencePrices] = await Promise.all([
     getWalletTokens(wallet),
     getCuratedUniverse(universeErrors),
     soft("Backpack securities list", getSecurities()),
     soft("Backpack issuer list", getBackpackIssuedMints()),
     soft("Backpack reference prices", getExternalTickers()),
   ]);
+  // Token-2022 mints can carry a scaled-UI multiplier: a split or distribution the issuer applied by
+  // rescaling balances. The RPC returns the raw amount, so apply it before anything is valued.
+  const tokens = await withScaledAmounts(rawTokens);
+
   for (const e of universeErrors) warnings.push(`${e.scope} unavailable: ${e.error}`);
 
   // Native SOL and wrapped SOL are both shown as SOL cash.
@@ -298,6 +316,19 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     });
   }
   holdings.sort((a, b) => b.valueUsd - a.valueUsd);
+
+  // What it would actually cost to leave each position, quoted both ways through Jupiter at the
+  // size held. Only the largest positions are measured (two quotes each), and a failure leaves the
+  // holding without a quote rather than failing the portfolio.
+  await pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 3, async (h) => {
+    if (!(h.valueUsd > 0)) return;
+    try {
+      const cost = await exitCost(h.variant.mint, h.valueUsd);
+      h.exitQuote = { status: cost.status, roundTripPct: cost.roundTripPct, routable: cost.routable, usdSize: cost.usdSize, routeLabels: cost.routeLabels } satisfies ExitQuote;
+    } catch {
+      h.exitQuote = null;
+    }
+  });
 
   const scored = portfolioScores(holdings.map((h) => ({ valueUsd: h.valueUsd, score: h.variant.score })));
   return {

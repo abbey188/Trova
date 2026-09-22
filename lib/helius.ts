@@ -14,7 +14,8 @@ function rpcUrl(): string {
   return url;
 }
 
-async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+/** Raw Helius JSON-RPC call with retry on 429/5xx. Exported for token-extensions.ts. */
+export async function heliusRpc<T>(method: string, params: unknown[]): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(rpcUrl(), {
       method: "POST",
@@ -57,9 +58,9 @@ interface ParsedTokenAccount {
 /** SOL balance plus every non-zero token balance the wallet holds (SPL Token and Token-2022). */
 export async function getWalletTokens(owner: string): Promise<{ solBalance: number; tokens: WalletToken[] }> {
   const [balance, spl, token2022] = await Promise.all([
-    rpc<{ value: number }>("getBalance", [owner]),
-    rpc<{ value: ParsedTokenAccount[] }>("getTokenAccountsByOwner", [owner, { programId: SPL_TOKEN_PROGRAM }, { encoding: "jsonParsed" }]),
-    rpc<{ value: ParsedTokenAccount[] }>("getTokenAccountsByOwner", [owner, { programId: TOKEN_2022_PROGRAM }, { encoding: "jsonParsed" }]),
+    heliusRpc<{ value: number }>("getBalance", [owner]),
+    heliusRpc<{ value: ParsedTokenAccount[] }>("getTokenAccountsByOwner", [owner, { programId: SPL_TOKEN_PROGRAM }, { encoding: "jsonParsed" }]),
+    heliusRpc<{ value: ParsedTokenAccount[] }>("getTokenAccountsByOwner", [owner, { programId: TOKEN_2022_PROGRAM }, { encoding: "jsonParsed" }]),
   ]);
 
   const byMint = new Map<string, WalletToken>();

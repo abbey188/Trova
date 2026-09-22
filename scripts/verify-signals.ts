@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { comparable, gapPercent } from "../lib/asset";
 import { portfolioSignals, valuePrice } from "../lib/portfolio";
 import { equityFeed, grantedFeedIds, tokenFeed } from "../lib/pyth";
-import { detectSignals, type SnapshotPoint } from "../lib/signals";
+import { detectNewVariants, detectSignals, type SnapshotPoint } from "../lib/signals";
 import { scoreVariant } from "../lib/trust-score";
 import type { Holding, TxzVariant } from "../lib/types";
 
@@ -19,6 +19,8 @@ function check(name: string, fn: () => void) {
     process.exitCode = 1;
   }
 }
+
+const dayStart = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
 const BASE: SnapshotPoint = {
   snapshot_date: "2026-09-01", mint: "Mint111", asset_id: "tesla", symbol: "TSLAx", method_version: "v3.2",
@@ -231,6 +233,41 @@ check("speculative exposure is always called out with the update note", () => {
 
 check("empty portfolio → no signals", () => {
   assert.deepEqual(portfolioSignals([]), []);
+});
+
+check("a token that appears mid-window is reported as new", () => {
+  const rows = [
+    { ...BASE, snapshot_date: "2026-09-01", mint: "old", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "old", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "fresh", symbol: "TSLAon" },
+  ];
+  const s = detectNewVariants(rows, dayStart("2026-09-01"));
+  assert.equal(s.length, 1);
+  assert.equal(s[0].mint, "fresh");
+  assert.equal(s[0].kind, "new-variant");
+  assert.match(s[0].message, /new token for tesla/);
+  assert.equal(s[0].from, "1");
+});
+
+check("tokens present from the first snapshot are never reported as new", () => {
+  const rows = [
+    { ...BASE, snapshot_date: "2026-09-01", mint: "a", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-01", mint: "b", symbol: "TSLAon" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "a", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "b", symbol: "TSLAon" },
+  ];
+  assert.equal(detectNewVariants(rows, dayStart("2026-09-01")).length, 0);
+});
+
+check("the first token for a company reads as first, not as one more", () => {
+  const rows = [
+    { ...BASE, snapshot_date: "2026-09-01", mint: "x", asset_id: "tesla", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "x", asset_id: "tesla", symbol: "TSLAx" },
+    { ...BASE, snapshot_date: "2026-09-02", mint: "arm1", asset_id: "arm-holdings-plc", symbol: "ARM" },
+  ];
+  const s = detectNewVariants(rows, dayStart("2026-09-01"));
+  assert.equal(s.length, 1);
+  assert.match(s[0].message, /first token tracking arm holdings plc/);
 });
 
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);

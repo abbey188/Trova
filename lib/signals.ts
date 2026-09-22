@@ -164,6 +164,51 @@ export function sortSignals(signals: Signal[]): Signal[] {
 }
 
 /** Change signals within the last `days` for the given mints (or the whole universe when omitted). */
+/**
+ * Tokens that were not in the previous snapshot. For a product about fragmentation this is the
+ * alert the others miss: a company gaining a second token, or being tokenized for the first time.
+ * Only fires for a mint whose first snapshot is inside the window, so day one of history is not
+ * reported as 562 new tokens.
+ */
+export function detectNewVariants(rows: SnapshotPoint[], windowStart: number): Signal[] {
+  const dates = [...new Set(rows.map((r) => r.snapshot_date))].sort();
+  if (dates.length < 2) return [];
+  const firstDate = dates[0];
+
+  const firstSeen = new Map<string, SnapshotPoint>();
+  for (const r of rows) {
+    const prev = firstSeen.get(r.mint);
+    if (!prev || r.snapshot_date < prev.snapshot_date) firstSeen.set(r.mint, r);
+  }
+  // How many tokens the asset already had the day before this one showed up.
+  const perAssetOnDate = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const key = `${r.asset_id}|${r.snapshot_date}`;
+    const set = perAssetOnDate.get(key) ?? new Set<string>();
+    set.add(r.mint);
+    perAssetOnDate.set(key, set);
+  }
+
+  const out: Signal[] = [];
+  for (const [mint, row] of firstSeen) {
+    if (row.snapshot_date === firstDate) continue;        // present from the start of our history
+    const detectedAt = dayStart(row.snapshot_date);
+    if (detectedAt < windowStart) continue;
+    const prevDate = dates[dates.indexOf(row.snapshot_date) - 1];
+    const before = perAssetOnDate.get(`${row.asset_id}|${prevDate}`)?.size ?? 0;
+    out.push({
+      assetId: row.asset_id, mint, symbol: row.symbol, detectedAt,
+      kind: "new-variant",
+      severity: "info",
+      message: before === 0
+        ? `${row.symbol} is the first token tracking ${row.asset_id.replace(/-/g, " ")}.`
+        : `${row.symbol} is a new token for ${row.asset_id.replace(/-/g, " ")} — there ${before === 1 ? "was 1" : `were ${before}`} before it.`,
+      from: String(before), to: String(before + 1),
+    });
+  }
+  return out;
+}
+
 export async function getChangeSignals(opts: { mints?: string[]; days?: number } = {}) {
   const days = Math.max(1, Math.min(MAX_SIGNAL_DAYS, Math.round(opts.days ?? 30)));
   const now = Date.now();
@@ -182,7 +227,10 @@ export async function getChangeSignals(opts: { mints?: string[]; days?: number }
     else byMint.set(r.mint, [r]);
   }
 
-  const signals = [...byMint.values()].flatMap(detectSignals).filter((s) => (s.detectedAt ?? 0) >= windowStart);
+  const signals = [
+    ...[...byMint.values()].flatMap(detectSignals),
+    ...detectNewVariants(rows, windowStart),
+  ].filter((s) => (s.detectedAt ?? 0) >= windowStart);
   const dates = [...new Set(rows.map((r) => r.snapshot_date))].sort();
   return { windowDays: days, historyDays: dates.length, latestDate: dates.at(-1) ?? null, signals: sortSignals(signals) };
 }

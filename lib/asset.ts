@@ -2,6 +2,8 @@
 // "which one should I hold?". Read-only. Price data is display-only and never scored.
 
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
+import { exitLadder } from "./jupiter";
+import { getScaledUiAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals } from "./signals";
 import { getAsset, getVariants, resolveIssuer } from "./tokens-xyz";
@@ -150,8 +152,37 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     };
   });
 
+  // A split or distribution the issuer scheduled on the mint itself (Token-2022 scaled UI amount).
+  // Optional context: if the lookup fails the page still renders, just without it.
+  try {
+    const scaled = await getScaledUiAmounts(views.map((v) => v.mint));
+    for (const v of views) {
+      const s = scaled.get(v.mint);
+      v.corporateAction = s
+        ? { multiplier: s.multiplier, newMultiplier: s.newMultiplier, effectiveAt: s.effectiveAt, pending: s.pending }
+        : null;
+    }
+  } catch {
+    warnings.push("Corporate actions unavailable for this asset.");
+  }
+
+  // What it costs to get in and back out of the best variant, at three sizes — measured, not modelled.
+  if (best) {
+    try {
+      const ladder = await exitLadder(best.variant.mint);
+      const view = views.find((v) => v.mint === best.variant.mint);
+      if (view) {
+        view.exitLadder = ladder.map((l) => ({
+          status: l.status, roundTripPct: l.roundTripPct, routable: l.routable, usdSize: l.usdSize, routeLabels: l.routeLabels,
+        }));
+      }
+    } catch {
+      warnings.push("Exit cost unavailable right now.");
+    }
+  }
+
   return {
-    asset: assetInfo,
+    asset: { ...assetInfo, cusip: securities?.get(ticker)?.cusip ?? null },
     asOf: Date.now(),
     methodVersion: METHOD_VERSION,
     stats: asset?.stats

@@ -77,6 +77,17 @@ Design tokens: lime #C6F24E = ACTION only; trust emerald #12B981 / amber
   reads its grants, maps Lazer ids → Hermes ids via public symbology (`/v1/symbols`), and filters.
   The FREE plan grants only 21 feeds: majors/FX/WTI, XAU+XAG, and just TSLA/QQQ/VOO among equities.
   Prices older than `MAX_PRICE_AGE_SEC` (15m) are dropped. Feed catalogue + symbology need no key.
+- **Jupiter execution (lib/jupiter.ts)**: `quote` / `quoteDetailed` / `exitCost` / `exitLadder` /
+  `swapTransaction`, against `lite-api.jup.ag/swap/v1` (keyless). `exitCost` BUYS with USDC then
+  quotes the sale back, so "what it costs to leave" is measured, not modelled — TSLAx 0.05% at
+  $4,661, OPENAI 2.20%, CLSKx **99.99%** (selling $504 returns $0.07). Status is three-valued:
+  `ok` / `no-route` / `unavailable` — a failed fetch must never be shown as "you cannot get out".
+  Referral fee comes from `JUPITER_REFERRAL_ACCOUNT` + `JUPITER_REFERRAL_FEE_BPS`.
+- **Token-2022 scaled UI amount (lib/token-extensions.ts)**: issuers apply splits and distributions
+  by changing a multiplier on the MINT. Two uses: (1) a corporate action readable BEFORE it executes
+  (`newMultiplier` + `newMultiplierEffectiveTimestamp`) — NFLXx/NFLXon carry Netflix's 10-for-1 split,
+  METAx moved +0.055% on 18 Sep; (2) **the RPC does NOT apply it**, so raw balances must be scaled or
+  a NFLXx position reads as a tenth of its worth. tokens.xyz prices per SCALED unit.
 - **Mint lookups (tokens.xyz)**: `resolveMint` (`/assets/resolve?mint=`) and
   `getVariantMarkets` (≤50 mints/call). `market-snapshots` returns hasMarket:false
   for stocks — don't use it for pricing.
@@ -123,13 +134,14 @@ underlyingListed from lib/backpack.ts, issuerConfirmed, historyDays).
 reported by same-class peers (pre-IPO → not_redeemable; 10/10 reporting pre-IPO
 variants), so silence never beats an explicit answer; classes with no reporting peers
 get neutral 50 + lower confidence. `redemptionBasis` + `redemptionNote()` explain it.
-**Step 2 — two pillars**, each shown to users on its own, combined into one score:
-- **Structure** ("what do I own?"): redemption 70% (share 100 / cash 75 /
+**Step 2 — two pillars**, named **Ownership** and **Exit** in code and on screen (renamed from
+Structure / Market health: a metric needs a noun, so an alert can say "TSLAx's exit score fell to 19"):
+- **Ownership** ("what do I own?"): redemption 70% (share 100 / cash 75 /
   unreported 50 / not redeemable 30) + product 30% (leveraged 40).
-- **Market health** ("can I get in and out?"): mean of liquidity, activity
+- **Exit** ("can I get in and out?"): mean of liquidity, activity
   (trades+volume), holders, and executionScore when reported — each scored against
   FIXED calibration anchors (quantiles of tradable variants; 50 = median).
-- **Trova Score** = geometric mean √(Structure × Market), then advisory caps
+- **Trova Score** = geometric mean √(Ownership × Exit), then advisory caps
   (caution 50 / compromised 15 / blocked hidden) — the ONLY caps. Grades A≥80 B≥65
   C≥50 D. **Borderline** = within 3 points of a cutoff (show number + "borderline
   B/C"); ~20% of letters move under ±50% weight changes, so never show a letter alone.
@@ -158,14 +170,15 @@ re-scored when METHOD_VERSION changes. Collector + writer: `lib/snapshot.ts`
 `Authorization: Bearer CRON_SECRET`, maxDuration 300, run ≈100s). Local: `pnpm snapshot`,
 `pnpm snapshot:dry`, `pnpm rescore [date]` (after any METHOD_VERSION bump), `pnpm verify:scoring`.
 Supabase access: `lib/supabase-rest.ts` (PostgREST via fetch, service key, server-only).
-The app is currently BACKEND-ONLY (API routes, no UI) — don't build front end until asked.
+Front end is under way: `app/page.tsx`, `app/asset/[id]`, the rating audit, and `components/trova/*`.
+Design is agreed on a canvas (17 screens, desktop + mobile) before each screen is built.
 
 ## API routes (backend; app is API-only until the front end is asked for)
 - `GET /api/health` → `{ ok, methodVersion }`.
 - `GET /api/cron/snapshot` → daily snapshot; requires `Authorization: Bearer CRON_SECRET`.
 - `GET /api/portfolio?wallet=` (lib/portfolio.ts) → `PortfolioSummary`: holdings scored with v3.2,
   `betterVariant` + `closeCall`, cash (SOL/USDC/USDT), `otherTokens`, value-weighted
-  overall/structure/market, needs-attention + speculative value, allocations, signals, warnings.
+  overall/ownership/exit, needs-attention + speculative value, allocations, signals, warnings.
   PUBKEY only. Tested live: 8s for a normal wallet, 23s for the xStocks issuer wallet (1,254 tokens).
 - `GET /api/asset/<assetId>` (lib/asset.ts) → `AssetDetail`: every variant ranked with its full score,
   instrument class + `redemptionNote`, the best pick (+ closeCall/runner-up), asset stats, change

@@ -178,6 +178,27 @@ export interface TrovaScore {
   methodVersion: string;
 }
 
+/**
+ * A balance change the issuer scheduled on the mint itself (Token-2022 scaled UI amount).
+ * A split or a distribution shows up here before any announcement — see lib/token-extensions.ts.
+ */
+export interface CorporateAction {
+  multiplier: number;            // in force now
+  newMultiplier: number;         // takes over at effectiveAt
+  effectiveAt: number | null;    // unix ms, null when nothing is scheduled
+  pending: boolean;              // a different multiplier is queued for a future date
+}
+
+/** What a round trip costs at a given size, quoted through Jupiter both ways. */
+export interface ExitQuote {
+  /** "ok" measured, "no-route" cannot be sold at this size, "unavailable" we could not reach Jupiter. */
+  status: "ok" | "no-route" | "unavailable";
+  roundTripPct: number | null;
+  routable: boolean;
+  usdSize: number;
+  routeLabels: string[];
+}
+
 export interface Variant {
   variantId: string;
   mint: string;
@@ -195,6 +216,8 @@ export interface Variant {
   botVolumeRatio?: number;
   executionScore?: number;
   holders?: number;
+  /** Scheduled or applied balance change on the mint; null when the token has no such extension. */
+  corporateAction?: CorporateAction | null;
   logoURI?: string;
   score: TrovaScore;
 }
@@ -203,6 +226,8 @@ export interface Asset {
   assetId: string;
   name: string;
   symbol: string;
+  /** CUSIP where an independent source carries one (Backpack lists ~50 of 1,166); null otherwise. */
+  cusip?: string | null;
   assetClass: "stock" | "etf" | "metal" | "rwa" | "treasury" | "crypto" | "other";
 }
 
@@ -214,6 +239,8 @@ export interface Holding {
   /** How the holding was priced: the variant's own market, a real stock price (Pyth, else Backpack),
    *  or not at all. Dead variants keep quoting a stale last trade, so their own price isn't trusted. */
   valuation: { priceUsd: number | null; source: "market" | "pyth" | "backpack" | "unknown"; stale: boolean };
+  /** Measured cost to leave this position at its current size. */
+  exitQuote?: ExitQuote | null;
   returnPct?: number;
   betterVariant?: Variant | null; // highest-scoring routable variant of the same asset, if better
   closeCall?: boolean;          // best pick is within CLOSE_CALL_MARGIN of the runner-up
@@ -242,7 +269,9 @@ export type SignalKind =
   | "grade-change" | "ownership-change" | "exit-change" | "redemption-change"
   | "advisory" | "tier-change" | "routability-change"
   // current portfolio (lib/portfolio.ts)
-  | "concentration" | "speculative" | "not-routable" | "better-variant" | "stale-price";
+  | "concentration" | "speculative" | "not-routable" | "better-variant" | "stale-price"
+  // a token that did not exist in the previous snapshot (lib/signals.ts)
+  | "new-variant";
 
 export interface Signal {
   kind: SignalKind;
@@ -281,6 +310,8 @@ export interface PriceReference {
 
 export interface AssetVariantView extends Variant {
   isBest: boolean;
+  /** Measured cost to get in and back out, at a few sizes. Best variant only. */
+  exitLadder?: ExitQuote[];
   /** On-chain price vs the reference, in %; null when the two aren't comparable 1:1. */
   gapPercent: number | null;
   redemptionNote: string | null;
