@@ -152,7 +152,7 @@ export interface PillarScore<C> {
 
 export type ScoreFlag =
   | "advisory-caution" | "advisory-compromised" | "advisory-blocked"
-  | "pre-ipo-exposure" | "speculative" | "underlying-unlisted"
+  | "pre-ipo-exposure" | "speculative"
   | "not-redeemable" | "redemption-unreported" | "leveraged"
   | "thin-liquidity" | "no-recent-trades" | "high-bot-share" | "issuer-unnamed"
   | "not-rated" | "short-history" | "borderline";

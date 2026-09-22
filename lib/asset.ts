@@ -101,7 +101,7 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     assetClass: entry?.assetClass ?? (asset?.category === "commodity" ? "metal" : asset?.category === "rwa" ? "rwa" : "other"),
   };
   const ticker = assetInfo.symbol.toUpperCase();
-  const listed = securities?.has(ticker) ?? false;
+  const quotedByBackpack = securities?.has(ticker) ?? false; // Backpack quotes this ticker — not proof the company is listed
   const shareFeed = (assetInfo.assetClass === "stock" || assetInfo.assetClass === "etf") && ticker ? equityFeed(ticker) : null;
   const metalFeed = assetInfo.assetClass === "metal" ? METAL_FEEDS[assetId] ?? null : null;
   const feedSymbol = shareFeed ?? metalFeed;
@@ -109,7 +109,7 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
 
   const [pyth, externalTickers, change] = await Promise.all([
     feedSymbol ? soft("Pyth prices", getPythPrices([feedSymbol])) : Promise.resolve(null),
-    shareFeed && listed ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
+    shareFeed && quotedByBackpack ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
     variants.length ? soft("Change history", getChangeSignals({ mints: variants.map((v) => v.mint), days: 30 })) : Promise.resolve(null),
   ]);
 
@@ -130,7 +130,6 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
   const ctxFor = (v: TxzVariant): ScoreContext => ({
     assetId,
     canonicalSource: asset?.canonicalMarket?.source,
-    underlyingListed: securities ? listed : undefined,
     issuerConfirmed: backpackMints?.has(v.mint),
     historyDays,
   });

@@ -35,17 +35,17 @@ function check(name: string, fn: () => void) {
 
 check("T-Mobile Ondo is a listed tracker, not pre-IPO", () => {
   const v = variant({ name: "T-Mobile US (Ondo Tokenized)", symbol: "TMUSon", label: "Ondo", tags: ["Ondo"] });
-  assert.equal(classifyInstrument(v, { assetId: "t-mobile", underlyingListed: true }).class, "backed-tracker");
+  assert.equal(classifyInstrument(v, { assetId: "t-mobile" }).class, "backed-tracker");
 });
 
 check("T-Mobile xStock is a listed tracker, not pre-IPO", () => {
   const v = variant({ name: "T-Mobile xStock", symbol: "TMUSx", label: "xStock", tags: ["xStock"] });
-  assert.equal(classifyInstrument(v, { assetId: "t-mobile", underlyingListed: true }).class, "backed-tracker");
+  assert.equal(classifyInstrument(v, { assetId: "t-mobile" }).class, "backed-tracker");
 });
 
 check("Tessera tOpenAI is pre-IPO exposure", () => {
   const v = variant({ name: "T-OpenAI", symbol: "tOpenAI", issuer: "Tessera", label: "Tessera", stockVariantTier: "not_redeemable" });
-  const info = classifyInstrument(v, { assetId: "openai", underlyingListed: false });
+  const info = classifyInstrument(v, { assetId: "openai" });
   assert.equal(info.class, "pre-ipo-exposure");
   assert.equal(info.speculative, true);
 });
@@ -64,22 +64,26 @@ check("Figure AI PreStocks is detected from its name", () => {
   assert.equal(classifyInstrument(v, { assetId: "figure-ai" }).class, "pre-ipo-exposure");
 });
 
-check("SpaceX PreStocks after IPO stays SPV exposure and says so", () => {
+check("SpaceX PreStocks is SPV exposure and claims nothing about listing status", () => {
+  // No source we have distinguishes a listed company from a venue-quoted private one:
+  // Backpack lists SPCX.US and Pyth publishes Equity.US.SPCX/USD, and SpaceX is private.
+  // So the copy must never assert whether the company is listed.
   const v = variant({ name: "SpaceX PreStocks", symbol: "SPACEX", label: "PreStocks", stockVariantTier: "not_redeemable" });
-  const info = classifyInstrument(v, { assetId: "spacex", underlyingListed: true });
+  const info = classifyInstrument(v, { assetId: "spacex" });
   assert.equal(info.class, "pre-ipo-exposure");
-  assert.match(info.summary, /^The company is now publicly listed/);
+  assert.doesNotMatch(info.summary, /publicly listed/);
+  assert.match(info.summary, /no ownership, voting, dividend or information rights/);
   assert.match(info.summary, /updates as more information becomes public/);
 });
 
 check("Backpack share-redeemable is a direct share claim", () => {
   const v = variant({ name: "SpaceX - Backpack Securities", symbol: "SPCX", issuer: "Backpack Securities", stockVariantTier: "share_redeemable" });
-  assert.equal(classifyInstrument(v, { underlyingListed: true }).class, "direct-share");
+  assert.equal(classifyInstrument(v, {}).class, "direct-share");
 });
 
 check("BABA not redeemable but listed is not pre-IPO", () => {
   const v = variant({ name: "Alibaba Group Holding - Backpack Securities", symbol: "BABA", stockVariantTier: "not_redeemable" });
-  assert.equal(classifyInstrument(v, { assetId: "alibaba", underlyingListed: true }).class, "non-redeemable-listed");
+  assert.equal(classifyInstrument(v, { assetId: "alibaba" }).class, "non-redeemable-listed");
 });
 
 check("leveraged kind is leveraged", () => {

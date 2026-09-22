@@ -106,7 +106,6 @@ export async function collectSnapshots(opts: { date?: string; concurrency?: numb
         const s = scoreVariant(v, {
           assetId: asset.assetId,
           canonicalSource: asset.canonicalMarket?.source,
-          underlyingListed: securities ? securities.has(asset.symbol.toUpperCase()) : undefined,
           issuerConfirmed: backpackMints?.has(v.mint),
         });
         rows.set(v.mint, toRow(v, s, { date, assetId: asset.assetId, assetClass }));
@@ -208,7 +207,6 @@ export async function rescoreSnapshots(date: string) {
     const ctx: ScoreContext = {
       assetId: r.asset_id,
       canonicalSource: asset?.canonicalMarket?.source,
-      underlyingListed: securities && asset ? securities.has(asset.symbol.toUpperCase()) : !r.flags.includes("underlying-unlisted"),
       issuerConfirmed: r.issuer_confirmed,
     };
     const s = scoreVariant(r.raw, ctx);

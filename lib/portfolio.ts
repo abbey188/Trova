@@ -259,7 +259,6 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     const ctxFor = (v: TxzVariant): ScoreContext => ({
       assetId: h.entry.asset.assetId,
       canonicalSource: h.entry.asset.canonicalMarket?.source,
-      underlyingListed: securities ? securities.has(h.entry.asset.symbol.toUpperCase()) : undefined,
       issuerConfirmed: backpackMints?.has(v.mint),
       historyDays,
     });

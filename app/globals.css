@@ -116,14 +116,85 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Trova — fonts and the rating palette.
+   Grades use emerald → amber; RED IS RESERVED for "you cannot get out" and advisories,
+   so it still lands when it appears. */
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+}
+
+:root {
+  --canvas: #edeef0;
+  --surface: #ffffff;
+  --hairline: #eceDef;
+  --ink: #14161a;
+  --ink-soft: #6b7280;
+  --ink-faint: #9aa0a8;
+  --action: #c6f24e;
+  --action-ink: #131414;
+
+  --grade-a: #0b7a55;
+  --grade-a-bg: #e3f6ed;
+  --grade-b: #2e7d5b;
+  --grade-b-bg: #eaf6ee;
+  --grade-c: #a56a00;
+  --grade-c-bg: #fbefd8;
+  --grade-d: #b4432f;
+  --grade-d-bg: #fbe9e5;
+  --grade-nr: #6b7280;
+  --grade-nr-bg: #f1f2f4;
+
+  --danger: #c0392b;
+  --danger-bg: #fdf0ee;
+  --danger-line: #f3c9c4;
+  --track: #f0f1f3;
+}
+
+.dark {
+  --canvas: #0c0d0f;
+  --surface: #17181b;
+  --hairline: #24262b;
+  --ink: #edeef0;
+  --ink-soft: #9aa0a8;
+  --ink-faint: #7a828c;
+
+  --grade-a: #34d399;
+  --grade-a-bg: rgba(52, 211, 153, 0.14);
+  --grade-b: #8fe3be;
+  --grade-b-bg: rgba(143, 227, 190, 0.12);
+  --grade-c: #f5b544;
+  --grade-c-bg: rgba(245, 181, 68, 0.14);
+  --grade-d: #f0a9a9;
+  --grade-d-bg: rgba(240, 169, 169, 0.12);
+  --grade-nr: #9aa0a8;
+  --grade-nr-bg: rgba(154, 160, 168, 0.12);
+
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --danger-line: rgba(248, 113, 113, 0.3);
+  --track: #24262b;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
     }
   body {
     @apply bg-background text-foreground;
+    background: var(--canvas);
+    color: var(--ink);
     }
   html {
     @apply font-sans;
     }
+}
+
+@layer utilities {
+  .font-display { font-family: var(--font-display), ui-sans-serif, system-ui; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .card-surface { background: var(--surface); border: 1px solid var(--hairline); }
+  .eyebrow {
+    font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--ink-faint);
+  }
 }

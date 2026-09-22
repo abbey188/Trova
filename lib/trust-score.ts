@@ -100,7 +100,7 @@ export const INSTRUMENT_INFO: Record<InstrumentClass, Omit<InstrumentInfo, "clas
   },
   "non-redeemable-listed": {
     label: "No redemption path",
-    summary: "No verified redemption path is reported for this token, although the company is publicly listed.",
+    summary: "No verified redemption path is reported for this token.",
     speculative: false,
   },
   unreported: {
@@ -169,8 +169,6 @@ function tierOf(v: TxzVariant): Tier {
 export interface ScoreContext {
   /** Issuer independently confirmed, e.g. the mint appears in Backpack's own asset list. */
   issuerConfirmed?: boolean;
-  /** Company appears in Backpack's US securities list (publicly listed). */
-  underlyingListed?: boolean;
   /** tokens.xyz asset id; "pre-*" ids are pre-IPO assets. */
   assetId?: string;
   /** tokens.xyz asset canonicalMarket.source; "prestocks" = priced against private marks. */
@@ -203,10 +201,6 @@ export function classifyInstrument(v: TxzVariant, ctx: ScoreContext = {}): Instr
   else cls = "unreported";
 
   const info: InstrumentInfo = { class: cls, ...INSTRUMENT_INFO[cls] };
-  // Wrappers that outlive an IPO (e.g. SpaceX PreStocks) are still SPV exposure, not the listed share.
-  if (cls === "pre-ipo-exposure" && ctx.underlyingListed) {
-    info.summary = `The company is now publicly listed, but this token remains SPV exposure — not the listed share. ${info.summary}`;
-  }
   return info;
 }
 
@@ -280,7 +274,6 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
   if (status) flags.push(`advisory-${status}`);
   if (instrument.class === "pre-ipo-exposure") flags.push("pre-ipo-exposure");
   if (instrument.speculative) flags.push("speculative");
-  if (ctx.underlyingListed === false) flags.push("underlying-unlisted");
   if (v.stockVariantTier === "not_redeemable") flags.push("not-redeemable");
   if (!structure.components.redemptionReported) flags.push("redemption-unreported");
   if (v.kind === "leveraged") flags.push("leveraged");
