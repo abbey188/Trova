@@ -1,12 +1,12 @@
 // Jupiter — the only place Trova touches execution. Quotes are read-only; a swap transaction is
 // built here but signed by the user's wallet, never by us.
 //
-// Hosts and limits (docs read 2026-09-22): lite-api.jup.ag is the keyless host, api.jup.ag takes an
-// `x-api-key`. The KEYLESS LIMIT IS 0.5 req/s — 30 a minute, shared across Swap, Price and Tokens.
-// Measuring one portfolio costs two quotes per holding and an asset page costs six, so an unkeyed
-// demo can exhaust the window in a single page load. Hence: an in-memory cache, one request at a
-// time, and 429 backoff that honours x-ratelimit-reset. Set JUPITER_API_KEY to lift the ceiling
-// (Free 60/min, Developer 600/min) from developers.jup.ag/portal.
+// Hosts and limits: lite-api.jup.ag is the keyless host, api.jup.ag takes an `x-api-key`.
+// MEASURED on our own key, 2026-09-23: a bucket of 10 over a ~10-SECOND sliding window — so a burst
+// of 10 and then about 1 request a second. That is the Free tier; keyless is half of it. Measuring
+// exit cost costs two quotes per holding, so an unpaced portfolio burns the bucket in a second and
+// then crawls on backoff. Hence a pacer, a cache, and 429 backoff that honours x-ratelimit-reset.
+// developers.jup.ag/portal sells more (Developer is 10 req/s).
 //
 // We quote through /swap/v1. The newer /swap/v2/order (api.jup.ag only) aggregates more routers,
 // but measured head to head on 2026-09-22 it was 0.04–0.10% WORSE on TSLAx and SPCX, and it charges
@@ -50,9 +50,41 @@ type Fetched = { ok: true; body: RawQuote } | { ok: false; reason: "no-route" | 
 
 // Quotes move on market time, not page time — a minute-old exit cost is still true, and caching is
 // what keeps us inside the rate limit.
-const TTL_MS = 60_000;
+const TTL_MS = 5 * 60_000;   // exit costs are stable minute to minute; the cache is the real rate-limit fix
 const cache = new Map<string, { at: number; value: Fetched }>();
 let backoffUntil = 0;
+
+
+// Client-side pacing, sized to the measured window: spend the burst, then hold ~1/s. Cheaper than
+// discovering the limit through 429s, and it keeps a page's quotes arriving steadily.
+const BURST = 8;
+const REFILL_MS = 1_100;
+let tokens = BURST;
+let lastRefill = Date.now();
+let queue: Promise<void> = Promise.resolve();
+
+async function takeToken(): Promise<void> {
+  const now = Date.now();
+  const gained = Math.floor((now - lastRefill) / REFILL_MS);
+  if (gained > 0) {
+    tokens = Math.min(BURST, tokens + gained);
+    lastRefill = now;
+  }
+  if (tokens > 0) {
+    tokens--;
+    return;
+  }
+  const wait = REFILL_MS - ((now - lastRefill) % REFILL_MS);
+  await new Promise((r) => setTimeout(r, wait));
+  lastRefill = Date.now();
+}
+
+/** Serialise every outbound call through the pacer, so concurrent callers cannot burst past it. */
+function paced<T>(fn: () => Promise<T>): Promise<T> {
+  const run = queue.then(takeToken).then(fn);
+  queue = run.then(() => undefined, () => undefined);
+  return run;
+}
 
 function cached(key: string): Fetched | null {
   const hit = cache.get(key);
@@ -74,7 +106,7 @@ async function getJson(url: string): Promise<Fetched> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, { headers: AUTH, signal: controller.signal, cache: "no-store" });
+      const res = await paced(() => fetch(url, { headers: AUTH, signal: controller.signal, cache: "no-store" }));
 
       if (res.status === 429) {
         // x-ratelimit-reset is the unix second at which one slot frees up.

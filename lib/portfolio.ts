@@ -31,7 +31,7 @@ const CASH_MINTS: Record<string, string> = {
 };
 
 // Exit cost costs two Jupiter quotes per holding, so only the largest positions are measured.
-const EXIT_QUOTED_HOLDINGS = 6;
+const EXIT_QUOTED_HOLDINGS = 4;
 
 export const CONCENTRATION_SHARE = 0.5;   // one variant ≥ 50% of tokenized holdings → concentration signal
 const MAX_LISTED = 3;                     // beyond this many same-kind signals, summarise instead of listing
