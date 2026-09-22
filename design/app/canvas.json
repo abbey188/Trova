@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Portfolio — overview" },
+    { "file": "AssetDetail.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 900, "title": "Asset — which token to hold" },
+    { "file": "WhyRated.dc.html", "x": 3120, "y": 0, "w": 1440, "h": 900, "title": "Why it's rated that way" }
+  ],
+  "annotations": [
+    { "id": "no-fake-chart", "x": 0, "y": -170, "w": 700, "text": "The reference dashboard's big panel is a 12-month performance line vs benchmarks. We have no portfolio history and no cost basis, so that slot holds cost-to-exit instead — same visual weight, real data, and nobody else publishes it." },
+    { "id": "loop", "x": 1560, "y": -170, "w": 700, "text": "The loop: hold → see what needs attention → open the asset → understand the rating → act with the cost on screen." },
+    { "id": "numbers-note", "x": 3120, "y": -170, "w": 700, "text": "Every number here is measured from live data on 16 Sep: grades, components, prices, exit costs, the SILV advisory. Portfolio values are a sample wallet." }
+  ],
+  "launch": { "view": "canvas" }
+}

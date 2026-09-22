@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; background: #F5F6F4; color: #14161A; -webkit-font-smoothing: antialiased; }
+    a { color: #0B7A55; text-decoration: none; } a:hover { color: #095F43; }
+    .g { font-family: 'Space Grotesk', system-ui, sans-serif; }
+    .nav { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 12px; font-size: 14px; font-weight: 500; color: #6B7280; }
+    .nav.active { background: #131414; color: #F5F6F4; font-weight: 600; }
+    .cell { font-size: 13px; }
+    .head { font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: #9AA0A8; }
+    .row { display: grid; grid-template-columns: 1.7fr 1fr 1.5fr 0.9fr 0.9fr 1.1fr; gap: 14px; align-items: center; padding: 13px 0; border-top: 1px solid #F0F1EE; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #F5F6F4; display: flex;">
+
+  <div style="width: 244px; flex-shrink: 0; background: #FFFFFF; border-right: 1px solid #E7E8E5; display: flex; flex-direction: column; padding: 24px 16px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 0 8px 24px 8px;">
+      <div style="width: 30px; height: 30px; border-radius: 9px; background: #C6F24E; display: flex; align-items: center; justify-content: center;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#131414" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>
+      </div>
+      <span class="g" style="font-size: 18px; font-weight: 700; letter-spacing: -0.3px;">Trova</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <div class="nav">Discover</div>
+      <div class="nav active">Markets</div>
+      <div class="nav">Portfolio</div>
+      <div class="nav">Settings</div>
+    </div>
+    <div style="margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px; background: #F5F6F4; border-radius: 12px;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #8A9099;">Method</span>
+      <span class="g" style="font-size: 12px; font-weight: 600;">v3.2 · 16 Sep</span>
+      <span style="font-size: 11px; color: #8A9099; line-height: 1.4;">Structure + Market health, scored the same way for every variant.</span>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+
+    <div style="display: flex; align-items: center; gap: 16px; padding: 20px 32px; border-bottom: 1px solid #E7E8E5;">
+      <span class="g" style="font-size: 22px; font-weight: 600;">Markets</span>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #FFFFFF; border: 1px solid #E7E8E5; border-radius: 12px; min-width: 320px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA0A8" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <span style="font-size: 14px; color: #9AA0A8;">Search an asset or variant…</span>
+      </div>
+      <div style="margin-left: auto; display: flex; gap: 8px;">
+        <span style="font-size: 12px; font-weight: 600; color: #F5F6F4; background: #131414; padding: 9px 14px; border-radius: 999px;">All</span>
+        <span style="font-size: 12px; font-weight: 500; color: #4B5563; background: #FFFFFF; border: 1px solid #E7E8E5; padding: 9px 14px; border-radius: 999px;">Tradable only</span>
+        <span style="font-size: 12px; font-weight: 500; color: #4B5563; background: #FFFFFF; border: 1px solid #E7E8E5; padding: 9px 14px; border-radius: 999px;">Share-redeemable</span>
+        <span style="font-size: 12px; font-weight: 500; color: #4B5563; background: #FFFFFF; border: 1px solid #E7E8E5; padding: 9px 14px; border-radius: 999px;">Speculative</span>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1; padding: 22px 32px; display: grid; grid-template-columns: 1fr 340px; gap: 24px; overflow: hidden;">
+
+      <div style="background: #FFFFFF; border: 1px solid #EDEEEB; border-radius: 18px; padding: 8px 20px 16px 20px; display: flex; flex-direction: column; min-width: 0;">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 0 10px 0;">
+          <span class="g" style="font-size: 16px; font-weight: 600;">Every variant, scored</span>
+          <span style="font-size: 12px; color: #8A9099;">sorted by grade · exit cost quoted at $5,000</span>
+        </div>
+
+        <div class="row head" style="border-top: none; padding-bottom: 8px;">
+          <span>Variant</span><span>Grade</span><span>Structure / Market</span><span>Price</span><span>Cost to exit</span><span>Status</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">SPCX</span><span style="font-size: 11px; color: #8A9099;">SpaceX · Backpack Securities</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #0B7A55; background: #E3F6ED; padding: 4px 9px; border-radius: 999px; justify-self: start;">A 97</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 100%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 95%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">100 / 95</span>
+          </div>
+          <span class="g cell">$144.14</span>
+          <span class="g cell" style="color: #0B7A55;">0.2%</span>
+          <span class="cell" style="font-size: 12px; color: #0B7A55;">Share-redeemable</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">TSLAx</span><span style="font-size: 11px; color: #8A9099;">Tesla · xStock</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #0B7A55; background: #E3F6ED; padding: 4px 9px; border-radius: 999px; justify-self: start;">A 86</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 83%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 89%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">83 / 89</span>
+          </div>
+          <span class="g cell">$356.53</span>
+          <span class="g cell" style="color: #0B7A55;">0.0%</span>
+          <span class="cell" style="font-size: 12px; color: #8A9099;">Tracks TSLA +0.01%</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">MSTRx</span><span style="font-size: 11px; color: #8A9099;">MicroStrategy · xStock</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #0B7A55; background: #E3F6ED; padding: 4px 9px; border-radius: 999px; justify-self: start;">A 83</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 83%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 83%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">83 / 83</span>
+          </div>
+          <span class="g cell">$128.85</span>
+          <span class="g cell" style="color: #8A9099;">—</span>
+          <span class="cell" style="font-size: 12px; color: #A56A00;">Borderline A/B</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">GLDx</span><span style="font-size: 11px; color: #8A9099;">Gold · tracker</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #2E7D5B; background: #EAF6EE; padding: 4px 9px; border-radius: 999px; justify-self: start;">B 76</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 65%; height: 5px; background: #F5A524; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 88%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">65 / 88</span>
+          </div>
+          <span class="g cell">$394.23</span>
+          <span class="g cell" style="color: #8A9099;">—</span>
+          <span class="cell" style="font-size: 12px; color: #8A9099;">Redemption not reported</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">MUx</span><span style="font-size: 11px; color: #8A9099;">Micron · xStock</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #C0392B; background: #FBE3E1; padding: 4px 9px; border-radius: 999px; justify-self: start;">D 39</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 83%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 18%; height: 5px; background: #F04438; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">83 / 18</span>
+          </div>
+          <span class="g cell">$932.58</span>
+          <span class="g cell" style="font-weight: 600; color: #A56A00;">8.7%</span>
+          <span class="cell" style="font-size: 12px; color: #A56A00;">Better variant: MU (A 91)</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">TSLAon</span><span style="font-size: 11px; color: #8A9099;">Tesla · Ondo</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #C0392B; background: #FBE3E1; padding: 4px 9px; border-radius: 999px; justify-self: start;">D 47</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 83%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 27%; height: 5px; background: #F04438; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">83 / 27</span>
+          </div>
+          <span class="g cell">$356.48</span>
+          <span class="g cell" style="font-weight: 700; color: #C0392B;">No exit</span>
+          <span class="cell" style="font-size: 12px; color: #C0392B;">No route at any size</span>
+        </div>
+
+        <div class="row">
+          <div style="display: flex; flex-direction: column; gap: 2px;"><span class="cell" style="font-weight: 600;">OPENAI</span><span style="font-size: 11px; color: #8A9099;">OpenAI · PreStocks</span></div>
+          <span class="g" style="font-size: 12px; font-weight: 700; color: #C0392B; background: #FBE3E1; padding: 4px 9px; border-radius: 999px; justify-self: start;">D 41</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 21%; height: 5px; background: #F04438; border-radius: 999px;"></div></div>
+            <div style="flex-grow: 1; height: 5px; background: #F0F1EE; border-radius: 999px;"><div style="width: 81%; height: 5px; background: #12B981; border-radius: 999px;"></div></div>
+            <span class="g" style="font-size: 11px; color: #8A9099; width: 56px;">21 / 81</span>
+          </div>
+          <span class="g cell">$1,031.31</span>
+          <span class="g cell" style="color: #8A9099;">—</span>
+          <span class="cell" style="font-size: 12px; font-weight: 600; color: #C0392B;">Speculative · SPV</span>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+        <div style="background: #FFFFFF; border: 1px solid #EDEEEB; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <span class="g" style="font-size: 15px; font-weight: 600;">Changes</span>
+            <span style="font-size: 11px; color: #8A9099;">tracking since 16 Sep</span>
+          </div>
+          <div style="display: flex; gap: 10px; padding: 12px; background: #F7F8F6; border-radius: 12px;">
+            <span style="font-size: 12px; line-height: 1.45; color: #5A6373;">Nothing has changed yet. Grades move only after a shift holds for three daily snapshots, so the first alerts land later this week.</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: #9AA0A8;">What we watch</span>
+            <span style="font-size: 12px; color: #5A6373; line-height: 1.5;">Redemption changes · advisories · liquidity tier · market health drops · a variant losing its route out</span>
+          </div>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid #EDEEEB; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 10px;">
+          <span class="g" style="font-size: 15px; font-weight: 600;">Reference price</span>
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span class="g" style="font-size: 24px; font-weight: 700;">$357.15</span>
+            <span style="font-size: 12px; color: #8A9099;">TSLA · Pyth</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; font-weight: 600; color: #0B7A55; background: #E3F6ED; padding: 3px 8px; border-radius: 999px;">±0.017%</span>
+            <span style="font-size: 11px; color: #8A9099;">published 0s ago · US market closed</span>
+          </div>
+          <span style="font-size: 12px; color: #5A6373; line-height: 1.45;">Every on-chain price on this page is compared against the real stock, not against itself.</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
