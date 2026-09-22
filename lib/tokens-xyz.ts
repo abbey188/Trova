@@ -2,7 +2,7 @@
 // Base + auth + endpoints validated against docs.tokens.xyz (2026-09-15).
 // Real response shapes validated against live solana + tesla payloads.
 
-import type { TxzVariant, TxzVariantsResponse } from "./types";
+import type { TxzAsset, TxzExecutionQuality, TxzMarket, TxzVariant, TxzVariantsResponse } from "./types";
 
 const BASE = "https://api.tokens.xyz/v1";
 
@@ -66,6 +66,48 @@ export async function getVariants(assetId: string): Promise<TxzVariant[]> {
   return data.variants ?? [];
 }
 
+/** Canonical asset detail — includes canonicalMarket (source "prestocks" = pre-IPO, with private marks). */
+export async function getAsset(assetId: string): Promise<TxzAsset | null> {
+  const data = await req<{ asset?: TxzAsset }>(`/assets/${encodeURIComponent(assetId)}`, { ttlMs: 5 * 60_000 });
+  return data.asset ?? null;
+}
+
+// --- Mint lookups (shapes validated against live responses, 2026-09-15) ---
+
+export interface TxzResolveResponse {
+  assetId: string;              // canonical id, or singleton "solana-<mint>" when unmapped
+  resolvedBy: string;           // e.g. "mint"
+  mint?: string;
+  asset?: { assetId: string; name: string; symbol: string; category?: string; aliases?: string[] };
+  variant?: Partial<TxzVariant> & { chain?: string; issuerUrl?: string }; // no market data here
+}
+
+/** Map a wallet mint to its canonical asset (+ tier/advisory metadata, no market). */
+export async function resolveMint(mint: string): Promise<TxzResolveResponse> {
+  return req<TxzResolveResponse>("/assets/resolve", { params: { mint }, ttlMs: 10 * 60_000 });
+}
+
+export interface TxzVariantMarket {
+  mint: string;
+  assetId: string;
+  chain?: string;
+  market: TxzMarket;
+  executionQuality?: TxzExecutionQuality | null;
+  advisory?: unknown | null;
+}
+
+/** Per-mint market data, batched (API max 50 mints per call). Use this, not
+ *  market-snapshots, to price stock holdings — snapshots return hasMarket:false for them. */
+export async function getVariantMarkets(mints: string[]): Promise<TxzVariantMarket[]> {
+  const unique = [...new Set(mints)];
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += 50) chunks.push(unique.slice(i, i + 50));
+  const pages = await Promise.all(chunks.map((c) =>
+    req<{ variants: TxzVariantMarket[] }>("/assets/variant-markets", { params: { mints: c.join(",") }, ttlMs: 30_000 }),
+  ));
+  return pages.flatMap((p) => p.variants ?? []);
+}
+
 // Curated universe. tokens.xyz lists: majors|lsts|currencies|rwas|etfs|metals|stocks
 // Treasuries live under "rwas" (filter by kind if needed).
 export type CuratedList = "stocks" | "etfs" | "metals" | "rwas";
@@ -95,7 +137,16 @@ export async function marketSnapshots(mints: string[]) {
   });
 }
 
-/** Resolve issuer display name from the messy real data (issuer often absent). */
+/** Resolve issuer display name from the messy real data (issuer present for ~3% of stocks).
+ *  Never returns internal list tags like "curated:etfs". Backpack's mint list can
+ *  override this upstream when it confirms the issuer. */
 export function resolveIssuer(v: TxzVariant): string {
-  return v.issuer || v.label || v.tags?.[0] || "Unknown";
+  if (v.issuer) return v.issuer;
+  if (v.label) return v.label;
+  const tag = v.tags?.find((t) => !t.startsWith("curated:"));
+  if (tag) return tag;
+  // Issuer symbol conventions: xStocks "TSLAx", Ondo "TSLAon".
+  if (/[A-Z]on$/.test(v.symbol)) return "Ondo";
+  if (/[A-Z]x$/.test(v.symbol)) return "xStock";
+  return "Unknown";
 }
