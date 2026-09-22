@@ -31,7 +31,7 @@ const CASH_MINTS: Record<string, string> = {
 };
 
 // Exit cost costs two Jupiter quotes per holding, so only the largest positions are measured.
-const EXIT_QUOTED_HOLDINGS = 10;
+const EXIT_QUOTED_HOLDINGS = 6;
 
 export const CONCENTRATION_SHARE = 0.5;   // one variant ≥ 50% of tokenized holdings → concentration signal
 const MAX_LISTED = 3;                     // beyond this many same-kind signals, summarise instead of listing
@@ -320,7 +320,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   // What it would actually cost to leave each position, quoted both ways through Jupiter at the
   // size held. Only the largest positions are measured (two quotes each), and a failure leaves the
   // holding without a quote rather than failing the portfolio.
-  await pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 3, async (h) => {
+  await pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 1, async (h) => {
     if (!(h.valueUsd > 0)) return;
     try {
       const cost = await exitCost(h.variant.mint, h.valueUsd);

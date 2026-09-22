@@ -1,10 +1,23 @@
-// Jupiter — the only place Trova touches execution. Quotes are read-only and need no key;
-// a swap transaction is built here but signed by the user's wallet, never by us.
+// Jupiter — the only place Trova touches execution. Quotes are read-only; a swap transaction is
+// built here but signed by the user's wallet, never by us.
 //
-// quote-api.jup.ag/v6 is dead; lite-api.jup.ag/swap/v1 answers without an API key (tested
-// 2026-09-22). Everything here fails soft: no route is an answer, not an error.
+// Hosts and limits (docs read 2026-09-22): lite-api.jup.ag is the keyless host, api.jup.ag takes an
+// `x-api-key`. The KEYLESS LIMIT IS 0.5 req/s — 30 a minute, shared across Swap, Price and Tokens.
+// Measuring one portfolio costs two quotes per holding and an asset page costs six, so an unkeyed
+// demo can exhaust the window in a single page load. Hence: an in-memory cache, one request at a
+// time, and 429 backoff that honours x-ratelimit-reset. Set JUPITER_API_KEY to lift the ceiling
+// (Free 60/min, Developer 600/min) from developers.jup.ag/portal.
+//
+// We quote through /swap/v1. The newer /swap/v2/order (api.jup.ag only) aggregates more routers,
+// but measured head to head on 2026-09-22 it was 0.04–0.10% WORSE on TSLAx and SPCX, and it charges
+// its own platform fee, so there is nothing to gain for measurement. If we ever move execution to
+// v2 note that the referral parameters are renamed: `referralAccount` / `referralFee`, not
+// `feeAccount` / `platformFeeBps`.
 
-const BASE = "https://lite-api.jup.ag/swap/v1";
+const KEY = process.env.JUPITER_API_KEY?.trim();
+const BASE = KEY ? "https://api.jup.ag/swap/v1" : "https://lite-api.jup.ag/swap/v1";
+const AUTH: HeadersInit = KEY ? { "x-api-key": KEY } : {};
+
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_DECIMALS = 6;
 const TIMEOUT_MS = 8_000;
@@ -35,20 +48,53 @@ export function referral(): { feeAccount?: string; platformFeeBps?: number } {
 
 type Fetched = { ok: true; body: RawQuote } | { ok: false; reason: "no-route" | "unavailable" };
 
+// Quotes move on market time, not page time — a minute-old exit cost is still true, and caching is
+// what keeps us inside the rate limit.
+const TTL_MS = 60_000;
+const cache = new Map<string, { at: number; value: Fetched }>();
+let backoffUntil = 0;
+
+function cached(key: string): Fetched | null {
+  const hit = cache.get(key);
+  if (!hit || Date.now() - hit.at > TTL_MS) return null;
+  return hit.value;
+}
+
+
 // A 4xx with an error body is Jupiter answering "there is no route". A timeout, a network error or a
 // 5xx is Jupiter not answering at all. Those are different facts and the UI says different things.
 async function getJson(url: string): Promise<Fetched> {
+  const hit = cached(url);
+  if (hit) return hit;
+
   for (let attempt = 0; attempt < 2; attempt++) {
+    const wait = backoffUntil - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 3_000)));
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+      const res = await fetch(url, { headers: AUTH, signal: controller.signal, cache: "no-store" });
+
+      if (res.status === 429) {
+        // x-ratelimit-reset is the unix second at which one slot frees up.
+        const reset = Number(res.headers.get("x-ratelimit-reset") ?? 0) * 1000;
+        backoffUntil = reset > Date.now() ? reset : Date.now() + 1_000;
+        continue;
+      }
       if (res.ok) {
         const body = (await res.json()) as RawQuote;
-        if (body.error || !body.outAmount) return { ok: false, reason: "no-route" };
-        return { ok: true, body };
+        const out: Fetched = body.error || !body.outAmount
+          ? { ok: false, reason: "no-route" }
+          : { ok: true, body };
+        cache.set(url, { at: Date.now(), value: out });
+        return out;
       }
-      if (res.status >= 400 && res.status < 500) return { ok: false, reason: "no-route" };
+      if (res.status >= 400 && res.status < 500) {
+        const out: Fetched = { ok: false, reason: "no-route" };
+        cache.set(url, { at: Date.now(), value: out });
+        return out;
+      }
     } catch {
       // fall through to the retry
     } finally {
@@ -56,7 +102,7 @@ async function getJson(url: string): Promise<Fetched> {
     }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 300));
   }
-  return { ok: false, reason: "unavailable" };
+  return { ok: false, reason: "unavailable" };  // deliberately not cached
 }
 
 /**
@@ -165,7 +211,7 @@ export async function swapTransaction({ quote: q, userPublicKey, wrapAndUnwrapSo
   try {
     const res = await fetch(`${BASE}/swap`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...AUTH },
       body: JSON.stringify({ quoteResponse: q, userPublicKey, wrapAndUnwrapSol, ...(feeAccount ? { feeAccount } : {}) }),
       signal: controller.signal,
       cache: "no-store",
