@@ -3,6 +3,8 @@
 
 import assert from "node:assert/strict";
 import { comparable, gapPercent } from "../lib/asset";
+import { summariseTrend } from "../lib/history";
+import type { HistoryPoint } from "../lib/types";
 import { portfolioSignals, valuePrice } from "../lib/portfolio";
 import { equityFeed, grantedFeedIds, tokenFeed } from "../lib/pyth";
 import { detectNewVariants, detectSignals, type SnapshotPoint } from "../lib/signals";
@@ -268,6 +270,103 @@ check("the first token for a company reads as first, not as one more", () => {
   const s = detectNewVariants(rows, dayStart("2026-09-01"));
   assert.equal(s.length, 1);
   assert.match(s[0].message, /first token tracking arm holdings plc/);
+});
+
+
+// --- trend summaries (lib/history.ts) -------------------------------------------------------
+// A point is what we snapshotted that day. A missed cron day is a MISSING point, never a zero —
+// zero-filling would invent a crash, which is the one thing a monitoring chart must never do.
+
+const PT: HistoryPoint = {
+  date: "2026-09-01", score: 80, grade: "A", ownership: 83, exit: 90,
+  liquidityUsd: 1_000_000 as number | null, holders: 100 as number | null,
+  volume24hUsd: 5_000 as number | null, routable: true,
+};
+const pts = (...over: Partial<HistoryPoint>[]): HistoryPoint[] => over.map((o, i) => ({ ...PT, date: `2026-09-0${i + 1}`, ...o }));
+
+check("a single reading is not a trend", () => {
+  const t = summariseTrend(pts({}));
+  assert.equal(t.days, 1);
+  assert.equal(t.scoreChange, null);
+  assert.equal(t.direction, "flat");
+});
+
+check("no history at all is empty, not zero", () => {
+  const t = summariseTrend([]);
+  assert.equal(t.days, 0);
+  assert.equal(t.scoreChange, null);
+  assert.equal(t.liquidityChangePct, null);
+  assert.equal(t.flat, false);
+});
+
+check("a dead token reads as flat", () => {
+  const t = summariseTrend(pts(
+    { score: 9, exit: 1, liquidityUsd: 0 },
+    { score: 9, exit: 1, liquidityUsd: 0 },
+    { score: 9, exit: 1, liquidityUsd: 0 },
+  ));
+  assert.equal(t.flat, true);
+  assert.equal(t.scoreChange, 0);
+});
+
+check("a moving token is never flat", () => {
+  const t = summariseTrend(pts({ exit: 90 }, { exit: 83 }, { exit: 92 }));
+  assert.equal(t.flat, false);
+});
+
+check("a score move inside the noise band has no direction", () => {
+  const t = summariseTrend(pts({ score: 86 }, { score: 87 }));
+  assert.equal(t.scoreChange, 1);
+  assert.equal(t.direction, "flat");
+});
+
+check("a real fall reads as down", () => {
+  const t = summariseTrend(pts({ score: 52 }, { score: 48 }, { score: 44 }));
+  assert.equal(t.scoreChange, -8);
+  assert.equal(t.direction, "down");
+});
+
+check("a gap in history is skipped, not read as a crash to zero", () => {
+  // The cron missed 2 Sep entirely. Liquidity went 1M -> (missing) -> 2M: up 100%, not down 100%.
+  const t = summariseTrend([
+    { ...PT, date: "2026-09-01", liquidityUsd: 1_000_000 },
+    { ...PT, date: "2026-09-03", liquidityUsd: 2_000_000 },
+  ]);
+  assert.equal(t.days, 2);
+  assert.equal(t.liquidityChangePct, 100);
+});
+
+check("a field that never reported yields null, not zero", () => {
+  const t = summariseTrend(pts({ holders: null }, { holders: null }));
+  assert.equal(t.holdersChange, null);
+});
+
+check("a field reported on only some days uses the days it has", () => {
+  const t = summariseTrend(pts({ holders: null }, { holders: 100 }, { holders: 140 }));
+  assert.equal(t.holdersChange, 40);
+});
+
+check("an unrated day does not zero the score change", () => {
+  const t = summariseTrend(pts({ score: null, grade: "NR" }, { score: 70 }, { score: 76 }));
+  assert.equal(t.scoreFrom, 70);
+  assert.equal(t.scoreTo, 76);
+  assert.equal(t.scoreChange, 6);
+});
+
+check("losing tradability is reported, regaining it is not", () => {
+  assert.equal(summariseTrend(pts({ routable: true }, { routable: false })).lostRoutability, true);
+  assert.equal(summariseTrend(pts({ routable: false }, { routable: true })).lostRoutability, false);
+});
+
+check("a grade change is flagged even when the score barely moved", () => {
+  const t = summariseTrend(pts({ score: 65, grade: "B" }, { score: 64, grade: "C" }));
+  assert.equal(t.gradeChanged, true);
+  assert.equal(t.direction, "flat");
+});
+
+check("a zero baseline cannot produce an infinite percentage", () => {
+  const t = summariseTrend(pts({ liquidityUsd: 0 }, { liquidityUsd: 5_000 }));
+  assert.equal(t.liquidityChangePct, null);
 });
 
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);

@@ -241,9 +241,60 @@ export interface Holding {
   valuation: { priceUsd: number | null; source: "market" | "pyth" | "backpack" | "unknown"; stale: boolean };
   /** Measured cost to leave this position at its current size. */
   exitQuote?: ExitQuote | null;
+  /** Daily rating history for the held variant, oldest first. */
+  history?: VariantHistory | null;
   returnPct?: number;
   betterVariant?: Variant | null; // highest-scoring routable variant of the same asset, if better
   closeCall?: boolean;          // best pick is within CLOSE_CALL_MARGIN of the runner-up
+}
+
+/** One day of a variant's rating history. A missing day is an absent point, never a zero. */
+export interface HistoryPoint {
+  date: string;                 // YYYY-MM-DD (the snapshot day)
+  score: number | null;         // null = not rated that day
+  grade: Rating;
+  ownership: number;
+  exit: number;
+  liquidityUsd: number | null;
+  holders: number | null;
+  volume24hUsd: number | null;
+  routable: boolean;
+}
+
+/** What a history series says, as facts about the move that happened — never an expected one. */
+export interface TrendSummary {
+  days: number;                 // points we actually have, not calendar days
+  scoreChange: number | null;   // last minus first, in points
+  scoreFrom: number | null;
+  scoreTo: number | null;
+  liquidityChangePct: number | null;
+  holdersChange: number | null;
+  direction: "up" | "down" | "flat";
+  /** Nothing moved at all across the window — how a dead token reads. */
+  flat: boolean;
+  gradeChanged: boolean;
+  lostRoutability: boolean;
+}
+
+/** A variant's daily history, oldest first, with its trend. */
+export interface VariantHistory {
+  mint: string;
+  assetId: string;
+  symbol: string;
+  points: HistoryPoint[];
+  trend: TrendSummary;
+}
+
+/** What Trova watched across the whole universe — the monitoring proof on the home screen. */
+export interface MonitoringStats {
+  windowDays: number;
+  historyDays: number;
+  latestDate: string | null;
+  variantsTracked: number;
+  ratingsChangedAndHeld: number;
+  becameUntradable: number;
+  tierMoves: number;
+  newVariants: number;
 }
 
 /** One point in a variant's score history — powers "what changed" over time. */
@@ -310,6 +361,8 @@ export interface PriceReference {
 
 export interface AssetVariantView extends Variant {
   isBest: boolean;
+  /** Daily rating history behind the chart, oldest first. Null when we have never snapshotted it. */
+  history?: VariantHistory | null;
   /** Measured cost to get in and back out, at a few sizes. Best variant only. */
   exitLadder?: ExitQuote[];
   /** On-chain price vs the reference, in %; null when the two aren't comparable 1:1. */

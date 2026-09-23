@@ -6,6 +6,7 @@
 import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
+import { getVariantHistory } from "./history";
 import { exitCost } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -257,9 +258,10 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const pythSymbols = held
     .filter((h) => h.entry.assetClass === "stock" || h.entry.assetClass === "etf")
     .map((h) => equityFeed(h.entry.asset.symbol));
-  const [change, pyth] = await Promise.all([
+  const [change, pyth, history] = await Promise.all([
     held.length ? soft("Change history", getChangeSignals({ mints: held.map((h) => h.mint), days: 30 })) : Promise.resolve(null),
     pythSymbols.length ? soft("Pyth prices", getPythPrices(pythSymbols)) : Promise.resolve(null),
+    held.length ? soft("Rating history", getVariantHistory(held.map((h) => h.mint), 90)) : Promise.resolve(null),
     pool(assetIds, 8, async (id) => {
       try {
         variantsByAsset.set(id, await getVariants(id));
@@ -313,6 +315,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       valuation,
       betterVariant: better ? view(better) : null,
       closeCall: better ? closeCall : false,
+      history: history?.get(h.mint) ?? null,
     });
   }
   holdings.sort((a, b) => b.valueUsd - a.valueUsd);

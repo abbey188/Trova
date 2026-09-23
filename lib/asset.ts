@@ -2,6 +2,7 @@
 // "which one should I hold?". Read-only. Price data is display-only and never scored.
 
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
+import { getVariantHistory } from "./history";
 import { exitLadder } from "./jupiter";
 import { getScaledUiAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -109,10 +110,11 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
   const feedSymbol = shareFeed ?? metalFeed;
   const basis: PriceBasis = metalFeed ? "ounce" : "share";
 
-  const [pyth, externalTickers, change] = await Promise.all([
+  const [pyth, externalTickers, change, history] = await Promise.all([
     feedSymbol ? soft("Pyth prices", getPythPrices([feedSymbol])) : Promise.resolve(null),
     shareFeed && quotedByBackpack ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
     variants.length ? soft("Change history", getChangeSignals({ mints: variants.map((v) => v.mint), days: 30 })) : Promise.resolve(null),
+    variants.length ? soft("Rating history", getVariantHistory(variants.map((v) => v.mint), 30)) : Promise.resolve(null),
   ]);
 
   const pythPrice = feedSymbol ? pyth?.get(feedSymbol) : undefined;
@@ -147,6 +149,7 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     return {
       ...view,
       isBest: best?.variant.mint === variant.mint,
+      history: history?.get(variant.mint) ?? null,
       gapPercent: gap,
       redemptionNote: redemptionNote(score),
     };
