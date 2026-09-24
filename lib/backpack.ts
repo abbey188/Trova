@@ -69,10 +69,6 @@ export async function getSecurities(): Promise<Map<string, BpSecurity>> {
   return new Map(list.map((s) => [s.asset.replace(/\.US$/, "").toUpperCase(), s]));
 }
 
-/** True when the company is publicly listed (appears in Backpack's securities list). */
-export async function isListedTicker(ticker: string): Promise<boolean> {
-  return (await getSecurities()).has(ticker.toUpperCase());
-}
 
 /** Solana mints of Backpack-issued ".US" tokens — confirms issuer independently of tokens.xyz. */
 export async function getBackpackIssuedMints(): Promise<Set<string>> {

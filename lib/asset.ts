@@ -1,19 +1,19 @@
 // Asset detail — every variant of one asset, ranked and explained: the safety report behind
 // "which one should I hold?". Read-only. Price data is display-only and never scored.
 
-import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
+import { getBackpackIssuedMints, getExternalKlines, getExternalTickers, getSecurities, type BpKline } from "./backpack";
 import { getVariantHistory } from "./history";
 import { exitLadder } from "./jupiter";
 import { getScaledUiAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals } from "./signals";
-import { getAsset, getVariants, resolveIssuer } from "./tokens-xyz";
+import { getAsset, getOhlcv, getRiskSummary, getVariants, resolveIssuer, type TxzOhlcv, type TxzRiskSummary } from "./tokens-xyz";
 import {
   METHOD_VERSION, pickBest, privateMarkFacts, rankVariants, redemptionNote,
   type ScoreContext,
 } from "./trust-score";
 import { getCuratedUniverse } from "./universe";
-import type { Asset, AssetDetail, AssetVariantView, PriceBasis, PriceReference, TrovaScore, TxzVariant, Variant } from "./types";
+import type { Asset, AssetDetail, AssetVariantView, Candle, ExternalRating, PriceBasis, PriceHistory, PriceReference, TrovaScore, TxzVariant, Variant } from "./types";
 
 /** Per-ounce metal feeds. Spot metal tokens (PAXG, XAUt0…) are one troy ounce; ETF-tracker tokens
  *  (GLDx, IAUon) follow a per-share ETF instead and get no reference. */
@@ -110,11 +110,16 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
   const feedSymbol = shareFeed ?? metalFeed;
   const basis: PriceBasis = metalFeed ? "ounce" : "share";
 
-  const [pyth, externalTickers, change, history] = await Promise.all([
+  const [pyth, externalTickers, change, history, risk, ohlcv, klines] = await Promise.all([
     feedSymbol ? soft("Pyth prices", getPythPrices([feedSymbol])) : Promise.resolve(null),
     shareFeed && quotedByBackpack ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
     variants.length ? soft("Change history", getChangeSignals({ mints: variants.map((v) => v.mint), days: 30 })) : Promise.resolve(null),
     variants.length ? soft("Rating history", getVariantHistory(variants.map((v) => v.mint), 30)) : Promise.resolve(null),
+    soft("Market risk rating", getRiskSummary(assetId)),
+    soft("Price history", getOhlcv(assetId, "1D", Date.now() / 1000 - HISTORY_DAYS * 86_400, Date.now() / 1000)),
+    shareFeed && quotedByBackpack
+      ? soft("Reference price history", getExternalKlines(ticker, "1d", Math.floor(Date.now() / 1000) - HISTORY_DAYS * 86_400))
+      : Promise.resolve(null),
   ]);
 
   const pythPrice = feedSymbol ? pyth?.get(feedSymbol) : undefined;
@@ -203,8 +208,66 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     privateMark: privateMarkFacts(asset?.canonicalMarket),
     variants: views,
     best: best ? { mint: best.variant.mint, symbol: best.variant.symbol, closeCall, runnerUpMint: runnerUp?.variant.mint ?? null } : null,
+    externalRating: externalRating(risk),
+    priceHistory: priceHistory(ohlcv?.candles, klines, ticker, reference),
     signals: change?.signals ?? [],
     historyDays,
     warnings,
   };
+}
+
+/** How many days of price history the asset page charts. */
+const HISTORY_DAYS = 90;
+
+/**
+ * tokens.xyz's market risk score, normalised for display beside ours.
+ *
+ * Each component is tagged with what it actually measures. All four of theirs are market metrics —
+ * that is not a criticism of their score, it is the reason two tokens with completely different
+ * rights can come back identical, and the reason Trova adds a pillar rather than a tiebreak.
+ */
+function externalRating(risk: TxzRiskSummary | null | undefined): ExternalRating | null {
+  const m = risk?.risk?.marketScore;
+  if (!m) return null;
+  return {
+    source: "tokens.xyz",
+    score: m.score ?? null,
+    grade: m.grade ?? null,
+    label: m.label ?? null,
+    tone: m.tone ?? null,
+    components: Object.entries(m.components ?? {}).map(([key, c]) => ({
+      key,
+      score: c?.score ?? null,
+      status: c?.status ?? null,
+      measures: "market" as const,   // every component they publish is a market metric
+    })),
+    insufficientData: m.hasInsufficientData ?? false,
+    updatedAt: risk?.risk?.lastUpdatedAt ?? null,
+  };
+}
+
+/**
+ * Price history for the chart: the token's own candles, plus the real stock's closes when the two
+ * are comparable 1:1. They are kept as separate series on purpose — a dead variant quoting a stale
+ * last trade against a live stock price is a fact worth seeing, not one to average away.
+ */
+function priceHistory(
+  candles: TxzOhlcv["candles"] | undefined,
+  klines: BpKline[] | null | undefined,
+  ticker: string,
+  reference: PriceReference | null,
+): PriceHistory | null {
+  const token: Candle[] = (candles ?? [])
+    .filter((c) => Number.isFinite(c.close))
+    .map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
+
+  // Only chart the real stock alongside when the reference is per-share — never a per-ounce metal.
+  const closes = reference?.basis === "share" && klines?.length
+    ? klines
+        .map((k) => ({ time: Math.floor(Date.parse(`${k.start.replace(" ", "T")}Z`) / 1000), close: Number(k.close) }))
+        .filter((k) => Number.isFinite(k.time) && Number.isFinite(k.close))
+    : [];
+
+  if (token.length === 0 && closes.length === 0) return null;
+  return { interval: "1D", token, reference: closes.length ? { ticker, closes } : null };
 }

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { comparable, gapPercent } from "../lib/asset";
 import { summariseTrend } from "../lib/history";
+import { better, type GradeRow } from "../lib/markets";
 import type { HistoryPoint } from "../lib/types";
 import { portfolioSignals, valuePrice } from "../lib/portfolio";
 import { equityFeed, grantedFeedIds, tokenFeed } from "../lib/pyth";
@@ -367,6 +368,28 @@ check("a grade change is flagged even when the score barely moved", () => {
 check("a zero baseline cannot produce an infinite percentage", () => {
   const t = summariseTrend(pts({ liquidityUsd: 0 }, { liquidityUsd: 5_000 }));
   assert.equal(t.liquidityChangePct, null);
+});
+
+
+// --- markets: which variant represents an asset (lib/markets.ts) ----------------------------
+// A markets row says "NVIDIA", so it must carry the grade of the variant a buyer would actually
+// be sent to — the one the asset page recommends — not whichever mint sorted first.
+
+const GR = (over: Partial<GradeRow>): GradeRow => ({
+  mint: "m", asset_id: "a", symbol: "X", score: 50, grade: "C", speculative: false, routable: true, ...over,
+});
+
+check("a routable variant represents the asset over a higher-scoring dead one", () => {
+  assert.equal(better(GR({ score: 40, routable: true }), GR({ score: 95, routable: false })), true);
+});
+
+check("between two routable variants the higher score wins", () => {
+  assert.equal(better(GR({ score: 90 }), GR({ score: 60 })), true);
+  assert.equal(better(GR({ score: 60 }), GR({ score: 90 })), false);
+});
+
+check("an unrated variant never displaces a rated one", () => {
+  assert.equal(better(GR({ score: null }), GR({ score: 30 })), false);
 });
 
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);

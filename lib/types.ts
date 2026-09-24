@@ -248,6 +248,69 @@ export interface Holding {
   closeCall?: boolean;          // best pick is within CLOSE_CALL_MARGIN of the runner-up
 }
 
+/** One row on the markets screen. `grade` null means we have never snapshotted it — unrated, not bad. */
+export interface MarketRow {
+  assetId: string;
+  mint: string | null;
+  symbol: string;
+  name: string;
+  category: string | null;
+  logoUrl: string | null;
+  priceUsd: number | null;
+  liquidityUsd: number | null;
+  volume24hUsd: number | null;
+  priceChange24hPercent: number | null;
+  score: number | null;
+  grade: Rating | null;
+  speculative: boolean;
+  routable: boolean | null;
+  hasAdvisory: boolean;
+}
+
+/** The markets screen. Each section degrades on its own. */
+export interface MarketsOverview {
+  asOf: number;
+  trending: MarketRow[];
+  lists: { list: string; rows: MarketRow[] }[];
+  warnings: string[];
+}
+
+/** One OHLCV candle. `time` is unix SECONDS, as tokens.xyz returns it. */
+export interface Candle {
+  time: number;
+  open: number; high: number; low: number; close: number;
+  volume: number;
+}
+
+/** Price history for the chart. Token price and the real stock price are separate series:
+ *  they are only the same thing when the token actually tracks 1:1, which is the point. */
+export interface PriceHistory {
+  interval: string;
+  /** The token's own on-chain price. */
+  token: Candle[];
+  /** The listed stock's real price, when the two are comparable 1:1. Null otherwise. */
+  reference: { ticker: string; closes: { time: number; close: number }[] } | null;
+}
+
+/**
+ * Somebody else's rating of the same token — tokens.xyz's market risk score.
+ *
+ * Carried so the two ratings can sit side by side. Every component it scores is a market metric
+ * (liquidity, holder distribution, trading activity, holder count), which is why it rates pre-IPO
+ * SPV exposure and a share-redeemable tracker identically. Never blended into the Trova Score.
+ */
+export interface ExternalRating {
+  source: "tokens.xyz";
+  score: number | null;
+  grade: string | null;
+  label: string | null;             // e.g. "Established"
+  tone: string | null;              // e.g. "safe"
+  /** Their sub-scores, each flagged with whether it measures the market or the instrument. */
+  components: { key: string; score: number | null; status: string | null; measures: "market" | "structure" }[];
+  insufficientData: boolean;
+  updatedAt: number | null;
+}
+
 /** One day of a variant's rating history. A missing day is an absent point, never a zero. */
 export interface HistoryPoint {
   date: string;                 // YYYY-MM-DD (the snapshot day)
@@ -388,6 +451,10 @@ export interface AssetDetail {
   privateMark: { markValuationUsd: number; impliedValuationUsd: number | null; premiumToMarkPercent: number | null; asOf: number | null } | null;
   variants: AssetVariantView[];
   best: { mint: string; symbol: string; closeCall: boolean; runnerUpMint: string | null } | null;
+  /** Another rater's verdict on the same asset, shown beside ours — never folded into it. */
+  externalRating: ExternalRating | null;
+  /** Real price history for the chart. Null when no source had any. */
+  priceHistory: PriceHistory | null;
   signals: Signal[];
   historyDays: number;
   warnings: string[];

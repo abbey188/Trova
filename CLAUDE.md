@@ -181,6 +181,11 @@ Design is agreed on a canvas (17 screens, desktop + mobile) before each screen i
   overall/ownership/exit, needs-attention + speculative value, allocations, signals, warnings.
   PUBKEY only. Tested live: 8s for a normal wallet, 23s for the xStocks issuer wallet (1,254 tokens).
 - `GET /api/asset/<assetId>` (lib/asset.ts) → `AssetDetail`: every variant ranked with its full score,
+  plus `externalRating` (tokens.xyz's own market score, shown BESIDE ours and never blended in —
+  it returns 100/A/"Established" for Tesla, SpaceX and OpenAI alike because all four of its
+  components are market metrics) and `priceHistory` (90d token candles + the real stock's closes,
+  only when the basis is per-share). NOTE: `/ohlcv` ignores `days`/`limit` and returns SIX candles
+  unless given `from`/`to`; `1W` returns nothing.
   instrument class + `redemptionNote`, the best pick (+ closeCall/runner-up), asset stats, change
   signals, and `reference` (Pyth first, else Backpack) with confidence + age + market-open.
   `gapPercent` = on-chain price vs reference, shown ONLY where units match (`comparable()`), and the
@@ -189,6 +194,12 @@ Design is agreed on a canvas (17 screens, desktop + mobile) before each screen i
   GOLD, XAUM) are 1 troy ounce → comparable; metal ETF trackers (kind `etf`: GLDx, IAUon) follow a
   per-share ETF → no reference. Pre-IPO SPV exposure is never comparable. `privateMark` exposes the
   pre-IPO last private valuation vs the token-implied one. Unknown id → 404 (tokens.xyz 404 ≠ outage).
+- `GET /api/history?mints=&days=` (lib/history.ts) → daily rating history per variant + `trend`
+  (score/liquidity/holders change, `flat` for a dead token). Gaps are missing points, never zeros.
+- `GET /api/markets?lists=` (lib/markets.ts) → trending + curated rows, each carrying the Trova
+  grade from the latest snapshot. Curated/search rows have NO `mint` (0 of 401 measured), so grades
+  key on `asset_id` and pick the variant a buyer would be sent to (routable first, then score).
+- `GET /api/search?q=` → fuzzy search ("nvid" → NVIDIA), graded the same way.
 - `GET /api/signals?mints=&days=` (lib/signals.ts) → change events from snapshots. Structural
   changes (advisory/redemption/instrument class/tier) fire immediately; grade, tradability and
   market-health changes must hold 3 snapshots; method-version changes never fire a grade signal.

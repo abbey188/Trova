@@ -119,15 +119,55 @@ export async function getTrending() {
   return req<{ assets: unknown[] }>("/assets/trending", { ttlMs: 60_000 });
 }
 
-export async function getOhlcv(assetId: string, interval = "1D") {
-  return req<unknown>(`/assets/${encodeURIComponent(assetId)}/ohlcv`, {
-    params: { interval }, ttlMs: 60_000,
-  });
+/**
+ * Candles for an asset. MEASURED 2026-09-24: without an explicit range this returns only SIX
+ * candles — `days` and `limit` are both ignored, `from`/`to` (unix seconds) are what widen it.
+ * 1W returns nothing at all; 1H works. So a 90-day chart must pass a range or it silently shows
+ * a week.
+ */
+export async function getOhlcv(assetId: string, interval = "1D", from?: number, to?: number) {
+  const params: Record<string, string> = { interval };
+  if (from) params.from = String(Math.floor(from));
+  if (to) params.to = String(Math.floor(to));
+  return req<TxzOhlcv>(`/assets/${encodeURIComponent(assetId)}/ohlcv`, { params, ttlMs: 60_000 });
 }
 
+export interface TxzOhlcv {
+  assetId: string;
+  mint: string;
+  interval: string;
+  candles: { time: number; open: number; high: number; low: number; close: number; volume: number }[];
+}
+
+/**
+ * tokens.xyz's own market risk score. Schema validated live 2026-09-24.
+ *
+ * Its four components are liquidityHealth, holderDistribution, tradingActivity and holderCount —
+ * every one a market metric, none structural. That is exactly why it returns score 100 / grade A /
+ * "Established" for Tesla, SpaceX and OpenAI alike, and why Trova shows it beside our rating rather
+ * than inside it.
+ */
 export async function getRiskSummary(assetId: string) {
-  // Field schema not documented — log the first live response and extend types.
-  return req<unknown>(`/assets/${encodeURIComponent(assetId)}/risk-summary`, { ttlMs: 5 * 60_000 });
+  return req<TxzRiskSummary>(`/assets/${encodeURIComponent(assetId)}/risk-summary`, { ttlMs: 5 * 60_000 });
+}
+
+export interface TxzRiskSummary {
+  assetId: string;
+  mint: string;
+  risk: {
+    ok: boolean;
+    marketScore: {
+      score: number | null;
+      grade: string | null;
+      label: string | null;
+      tone: string | null;
+      caps: unknown[];
+      hasInsufficientData: boolean;
+      insufficientDataReason: string | null;
+      components: Record<string, { score: number | null; status: string | null; hasData: boolean }>;
+    } | null;
+    lastUpdatedAt?: number;
+  } | null;
 }
 
 // Batch price/market snapshots (≤250 mints) — use for portfolio pricing.
