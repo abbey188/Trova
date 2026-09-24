@@ -30,9 +30,12 @@ export interface Quote {
   priceImpactPct: number;
   routeLabels: string[];        // e.g. ["TesseraV"] — the AMMs Jupiter routed through
   slippageBps: number;
+  /** Jupiter's quoteResponse exactly as returned. /swap needs ALL of it (routePlan, otherAmountThreshold,
+   *  swapMode, …) — passing our summary instead makes it refuse to build a transaction. */
+  response: Record<string, unknown>;
 }
 
-interface RawQuote {
+interface RawQuote extends Record<string, unknown> {
   inputMint?: string; outputMint?: string; inAmount?: string; outAmount?: string;
   priceImpactPct?: string; slippageBps?: number; error?: string;
   routePlan?: { swapInfo?: { label?: string } }[];
@@ -95,18 +98,25 @@ function cached(key: string): Fetched | null {
 
 // A 4xx with an error body is Jupiter answering "there is no route". A timeout, a network error or a
 // 5xx is Jupiter not answering at all. Those are different facts and the UI says different things.
-async function getJson(url: string): Promise<Fetched> {
-  const hit = cached(url);
+async function getJson(url: string, { fresh = false }: { fresh?: boolean } = {}): Promise<Fetched> {
+  // A quote that will be SIGNED must be fresh; a cached one is fine for measuring exit cost.
+  const hit = fresh ? null : cached(url);
   if (hit) return hit;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const wait = backoffUntil - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 3_000)));
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    // The timeout starts when the request LEAVES the pacer, not when it joins the queue. Started
+    // earlier, a request that waited its turn behind a burst would abort before it was ever sent
+    // and read as "Jupiter unavailable" — a false outage produced by our own rate limiter.
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const res = await paced(() => fetch(url, { headers: AUTH, signal: controller.signal, cache: "no-store" }));
+      const res = await paced(() => {
+        const controller = new AbortController();
+        timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        return fetch(url, { headers: AUTH, signal: controller.signal, cache: "no-store" });
+      });
 
       if (res.status === 429) {
         // x-ratelimit-reset is the unix second at which one slot frees up.
@@ -130,7 +140,7 @@ async function getJson(url: string): Promise<Fetched> {
     } catch {
       // fall through to the retry
     } finally {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
     }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 300));
   }
@@ -145,7 +155,7 @@ export async function quote(
   inputMint: string,
   outputMint: string,
   rawAmount: string | number,
-  opts: { slippageBps?: number; withFee?: boolean } = {},
+  opts: { slippageBps?: number; withFee?: boolean; fresh?: boolean } = {},
 ): Promise<Quote | null> {
   const r = await quoteDetailed(inputMint, outputMint, rawAmount, opts);
   return r.ok ? r.quote : null;
@@ -156,7 +166,7 @@ export async function quoteDetailed(
   inputMint: string,
   outputMint: string,
   rawAmount: string | number,
-  { slippageBps = 50, withFee = false }: { slippageBps?: number; withFee?: boolean } = {},
+  { slippageBps = 50, withFee = false, fresh = false }: { slippageBps?: number; withFee?: boolean; fresh?: boolean } = {},
 ): Promise<{ ok: true; quote: Quote } | { ok: false; reason: "no-route" | "unavailable" }> {
   const params = new URLSearchParams({
     inputMint, outputMint, amount: String(rawAmount), slippageBps: String(slippageBps),
@@ -165,7 +175,7 @@ export async function quoteDetailed(
     const { platformFeeBps } = referral();
     if (platformFeeBps) params.set("platformFeeBps", String(platformFeeBps));
   }
-  const fetched = await getJson(`${BASE}/quote?${params}`);
+  const fetched = await getJson(`${BASE}/quote?${params}`, { fresh });
   if (!fetched.ok) return fetched;
   const raw = fetched.body;
   return { ok: true, quote: {
@@ -176,6 +186,7 @@ export async function quoteDetailed(
     priceImpactPct: Number(raw.priceImpactPct ?? 0),
     routeLabels: (raw.routePlan ?? []).map((r) => r.swapInfo?.label).filter((l): l is string => !!l),
     slippageBps: raw.slippageBps ?? slippageBps,
+    response: raw,
   } };
 }
 
@@ -226,6 +237,39 @@ export async function exitLadder(mint: string, sizes: number[] = [5_000, 50_000,
   return out;
 }
 
+export interface SellNow {
+  status: "ok" | "no-route" | "unavailable";
+  /** USDC you would receive for the whole position right now. */
+  receivedUsd: number | null;
+  /** How much of the position's value the sale gives up, in %. */
+  lossPct: number | null;
+  routeLabels: string[];
+}
+
+/**
+ * What selling a position you ALREADY hold returns right now: the whole balance, one way, to USDC.
+ *
+ * For a holder this is the true number. A round trip (exitCost) also pays the buy leg, which in a
+ * thin market dominates — TSLAon's $1,200 round trip costs 97.7%, but most of that is buying INTO
+ * $39 of liquidity, which a holder never has to do. The asset page keeps the round trip; the
+ * portfolio shows this.
+ */
+export async function sellNow(mint: string, rawAmount: bigint, valueUsd: number, slippageBps = 100): Promise<SellNow> {
+  const empty: SellNow = { status: "unavailable", receivedUsd: null, lossPct: null, routeLabels: [] };
+  if (mint === USDC_MINT) return { status: "ok", receivedUsd: valueUsd, lossPct: 0, routeLabels: [] };
+  if (rawAmount <= 0n) return { ...empty, status: "no-route" };
+
+  const leg = await quoteDetailed(mint, USDC_MINT, rawAmount.toString(), { slippageBps });
+  if (!leg.ok) return { ...empty, status: leg.reason };
+  const receivedUsd = Number(leg.quote.outAmount) / 10 ** USDC_DECIMALS;
+  return {
+    status: "ok",
+    receivedUsd,
+    lossPct: valueUsd > 0 ? Math.max(0, ((valueUsd - receivedUsd) / valueUsd) * 100) : null,
+    routeLabels: leg.quote.routeLabels,
+  };
+}
+
 export interface SwapRequest {
   quote: Quote;
   userPublicKey: string;
@@ -244,11 +288,23 @@ export async function swapTransaction({ quote: q, userPublicKey, wrapAndUnwrapSo
     const res = await fetch(`${BASE}/swap`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...AUTH },
-      body: JSON.stringify({ quoteResponse: q, userPublicKey, wrapAndUnwrapSol, ...(feeAccount ? { feeAccount } : {}) }),
+      body: JSON.stringify({
+        quoteResponse: q.response,
+        userPublicKey,
+        wrapAndUnwrapSol,
+        // Size the compute budget to the route and pay a capped priority fee, so a signed swap
+        // actually lands on mainnet instead of expiring in a busy slot.
+        dynamicComputeUnitLimit: true,
+        prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: 500_000, priorityLevel: "high" } },
+        ...(feeAccount ? { feeAccount } : {}),
+      }),
       signal: controller.signal,
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("jupiter swap build failed", res.status, (await res.text()).slice(0, 300));
+      return null;
+    }
     const body = (await res.json()) as { swapTransaction?: string };
     return body.swapTransaction ?? null;
   } catch {

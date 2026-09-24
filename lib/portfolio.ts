@@ -7,7 +7,7 @@ import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
 import { getVariantHistory } from "./history";
-import { exitCost } from "./jupiter";
+import { sellNow } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals, sortSignals } from "./signals";
@@ -221,6 +221,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
 
   // Native SOL and wrapped SOL are both shown as SOL cash.
   const amounts = new Map(tokens.map((t) => [t.mint, t.amount]));
+  const rawAmounts = new Map(tokens.map((t) => [t.mint, BigInt(t.rawAmount)]));
   amounts.set(NATIVE_SOL_MINT, (amounts.get(NATIVE_SOL_MINT) ?? 0) + solBalance);
   // Wallets can hold thousands of unrelated tokens (the xStocks issuer wallet holds 1,254), so the
   // mint→asset lookup goes out in capped batches and a failed batch only costs those tokens.
@@ -323,12 +324,26 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   // What it would actually cost to leave each position, quoted both ways through Jupiter at the
   // size held. Only the largest positions are measured (two quotes each), and a failure leaves the
   // holding without a quote rather than failing the portfolio.
+  // Two different questions, both measured. `sellNow` is the holder's question — sell this exact
+  // balance today, one way — and it is what the holdings list shows. `exitQuote` is the round trip,
+  // kept for the asset-page comparison between tokens. In a thin market they differ enormously:
+  // most of a round trip's loss is buying INTO the thin market, which a holder never has to do.
   await pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 1, async (h) => {
     if (!(h.valueUsd > 0)) return;
     try {
-      const cost = await exitCost(h.variant.mint, h.valueUsd);
-      h.exitQuote = { status: cost.status, roundTripPct: cost.roundTripPct, routable: cost.routable, usdSize: cost.usdSize, routeLabels: cost.routeLabels } satisfies ExitQuote;
+      const raw = rawAmounts.get(h.variant.mint) ?? 0n;
+      const sale = await sellNow(h.variant.mint, raw, h.valueUsd);
+      h.sellNow = sale;
+      // Keep the legacy field populated from the same measurement so existing readers stay correct.
+      h.exitQuote = {
+        status: sale.status,
+        roundTripPct: sale.lossPct,
+        routable: sale.status === "ok",
+        usdSize: Math.round(h.valueUsd),
+        routeLabels: sale.routeLabels,
+      } satisfies ExitQuote;
     } catch {
+      h.sellNow = null;
       h.exitQuote = null;
     }
   });

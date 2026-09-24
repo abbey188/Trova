@@ -241,6 +241,8 @@ export interface Holding {
   valuation: { priceUsd: number | null; source: "market" | "pyth" | "backpack" | "unknown"; stale: boolean };
   /** Measured cost to leave this position at its current size. */
   exitQuote?: ExitQuote | null;
+  /** What selling this exact balance returns right now, one way to USDC. The holder's number. */
+  sellNow?: { status: "ok" | "no-route" | "unavailable"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[] } | null;
   /** Daily rating history for the held variant, oldest first. */
   history?: VariantHistory | null;
   returnPct?: number;

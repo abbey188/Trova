@@ -41,6 +41,9 @@ export function isSolanaAddress(value: string): boolean {
 export interface WalletToken {
   mint: string;
   amount: number;               // UI amount, summed across the owner's token accounts for this mint
+  /** Exact balance in base units, summed as integers. This is what a sell quote needs — the UI
+   *  amount is a float, and a scaled-UI multiplier is applied to `amount` later, never to this. */
+  rawAmount: string;
   decimals: number;
   program: "spl-token" | "token-2022";
 }
@@ -70,8 +73,27 @@ export async function getWalletTokens(owner: string): Promise<{ solBalance: numb
       const amount = Number(tokenAmount.uiAmountString);
       if (!(amount > 0)) continue;
       const prev = byMint.get(mint);
-      byMint.set(mint, { mint, amount: (prev?.amount ?? 0) + amount, decimals: tokenAmount.decimals, program });
+      const raw = (BigInt(prev?.rawAmount ?? "0") + BigInt(tokenAmount.amount)).toString();
+      byMint.set(mint, { mint, amount: (prev?.amount ?? 0) + amount, rawAmount: raw, decimals: tokenAmount.decimals, program });
     }
   }
   return { solBalance: balance.value / 1e9, tokens: [...byMint.values()] };
+}
+
+/**
+ * Decimals for each mint, read from the mint account itself — the only source that cannot disagree
+ * with the chain. Needed to turn a raw quote amount into a number a person can read. Mints the RPC
+ * cannot parse are absent; callers must treat that as "unknown", never as zero decimals.
+ */
+export async function getMintDecimals(mints: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const unique = [...new Set(mints)].filter(Boolean);
+  if (unique.length === 0) return out;
+  const res = await heliusRpc<{ value: ({ data?: { parsed?: { info?: { decimals?: number } } } } | null)[] }>(
+    "getMultipleAccounts", [unique, { encoding: "jsonParsed" }]);
+  (res.value ?? []).forEach((a, i) => {
+    const d = a?.data?.parsed?.info?.decimals;
+    if (typeof d === "number") out.set(unique[i], d);
+  });
+  return out;
 }

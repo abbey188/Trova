@@ -182,7 +182,9 @@ export async function getMonitoringStats(days = 7, change?: ChangeResult): Promi
     latestDate,
     variantsTracked: new Set(tracked.map((t) => t.mint)).size,
     ratingsChangedAndHeld: count("grade-change"),
-    becameUntradable: signals.filter((s) => s.kind === "routability-change" && s.severity === "danger").length,
+    // Losing tradability is emitted as a "warn", so it is matched on direction, not severity —
+    // matching on severity counted zero every time.
+    becameUntradable: signals.filter((s) => s.kind === "routability-change" && s.to === "not tradable").length,
     tierMoves: count("tier-change"),
     newVariants: count("new-variant"),
   };
