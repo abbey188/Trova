@@ -29,11 +29,11 @@ export async function GET(request: Request) {
   try {
     // Universe-wide requests also carry the monitoring counts the home screen shows, so the
     // dashboard number and the feed below it are computed from the same signals and cannot disagree.
+    // The scan is handed to getMonitoringStats rather than run again — it reads every snapshot for
+    // the whole universe, and once per request is enough.
+    const result = await getChangeSignals({ mints: mints.length ? mints : undefined, days });
     const wantStats = mints.length === 0 && params.get("stats") !== "false";
-    const [result, stats] = await Promise.all([
-      getChangeSignals({ mints: mints.length ? mints : undefined, days }),
-      wantStats ? getMonitoringStats(days) : Promise.resolve(null),
-    ]);
+    const stats = wantStats ? await getMonitoringStats(days, result) : null;
     return Response.json(
       stats ? { ...result, stats } : result,
       { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=3600" } },

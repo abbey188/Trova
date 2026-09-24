@@ -17,6 +17,9 @@ import { getChangeSignals, MAX_SIGNAL_DAYS } from "./signals";
 import { selectRows } from "./supabase-rest";
 import type { HistoryPoint, MonitoringStats, Rating, TrendSummary, VariantHistory } from "./types";
 
+/** What getChangeSignals returns — accepted here so a caller's scan can be reused. */
+type ChangeResult = Awaited<ReturnType<typeof getChangeSignals>>;
+
 /** A trend needs something to compare against; one point is a reading, not a trend. */
 const MIN_TREND_POINTS = 2;
 
@@ -161,9 +164,11 @@ export async function getVariantHistory(mints: string[], days = 30): Promise<Map
  * not a one-off reading. Counts come from the same persistence-checked signals the feed shows, so
  * the number on the dashboard and the list on Updates can never disagree.
  */
-export async function getMonitoringStats(days = 7): Promise<MonitoringStats> {
+export async function getMonitoringStats(days = 7, change?: ChangeResult): Promise<MonitoringStats> {
   const window = Math.max(1, Math.min(MAX_SIGNAL_DAYS, Math.round(days)));
-  const { signals, historyDays, latestDate } = await getChangeSignals({ days: window });
+  // Callers that already ran the universe-wide scan pass it in: detecting signals reads every
+  // snapshot for ~560 mints, and the home screen must not pay for that twice in one request.
+  const { signals, historyDays, latestDate } = change ?? (await getChangeSignals({ days: window }));
 
   const tracked = latestDate
     ? await selectRows<{ mint: string }>("variant_snapshots", `select=mint&snapshot_date=eq.${latestDate}`)
