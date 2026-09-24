@@ -269,6 +269,8 @@ export interface MarketRow {
   speculative: boolean;
   routable: boolean | null;
   hasAdvisory: boolean;
+  /** Every variant mint we snapshot for this asset — what /api/signals takes for a watchlist feed. */
+  mints: string[];
 }
 
 /** The markets screen. Each section degrades on its own. */

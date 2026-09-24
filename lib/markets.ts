@@ -9,7 +9,7 @@
 // A missing grade must never render as a bad one.
 
 import { selectRows } from "./supabase-rest";
-import { getCurated, getTrending, searchAssets, type CuratedList } from "./tokens-xyz";
+import { getAsset, getCurated, getTrending, searchAssets, type CuratedList } from "./tokens-xyz";
 import type { MarketRow, MarketsOverview, Rating } from "./types";
 
 /** tokens.xyz shapes, only the fields we surface. */
@@ -49,8 +49,8 @@ const CHUNK = 120;
  * also the right answer: a markets row says "NVIDIA", so the grade it deserves is the best variant
  * a buyer could actually hold, which is what the asset page would send them to.
  */
-async function gradesFor(assetIds: string[]): Promise<Map<string, GradeRow>> {
-  const out = new Map<string, GradeRow>();
+async function gradesFor(assetIds: string[]): Promise<Map<string, GradeRow & { mints?: string[] }>> {
+  const out = new Map<string, GradeRow & { mints?: string[] }>();
   const unique = [...new Set(assetIds)].filter(Boolean);
   if (unique.length === 0) return out;
 
@@ -73,7 +73,8 @@ async function gradesFor(assetIds: string[]): Promise<Map<string, GradeRow>> {
     }
     for (const r of rows) {
       const held = out.get(r.asset_id);
-      if (!held || better(r, held)) out.set(r.asset_id, r);
+      const mints = [...(held?.mints ?? []), r.mint];
+      out.set(r.asset_id, { ...(!held || better(r, held) ? r : held), mints });
     }
   }
   return out;
@@ -85,7 +86,7 @@ export function better(a: GradeRow, b: GradeRow): boolean {
   return (a.score ?? -1) > (b.score ?? -1);
 }
 
-function toRow(r: TxzRow, grades: Map<string, GradeRow>): MarketRow {
+function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>): MarketRow {
   const m = r.market ?? r.stats ?? {};
   const g = r.assetId ? grades.get(r.assetId) : undefined;
   return {
@@ -105,6 +106,8 @@ function toRow(r: TxzRow, grades: Map<string, GradeRow>): MarketRow {
     speculative: g?.speculative ?? false,
     routable: g?.routable ?? null,
     hasAdvisory: r.advisory != null,
+    // Every mint we snapshot for this asset, so a watchlist can ask /api/signals what changed.
+    mints: g?.mints ?? (r.mint ? [r.mint] : []),
   };
 }
 
@@ -163,4 +166,33 @@ export async function getMarketsOverview(lists: CuratedList[] = ["stocks", "etfs
     })),
     warnings,
   };
+}
+
+/**
+ * Rows for a specific set of assets, in the order given — what the watchlist renders. Built from the
+ * curated lists (cached, and they already carry price and logo), falling back to a per-asset lookup
+ * for anything outside them. An asset tokens.xyz no longer knows is dropped, not shown blank.
+ */
+export async function getAssetRows(assetIds: string[]): Promise<MarketRow[]> {
+  const wanted = [...new Set(assetIds)].filter(Boolean);
+  if (wanted.length === 0) return [];
+
+  const lists = await Promise.all(
+    (["stocks", "etfs", "metals", "rwas"] as CuratedList[]).map((l) => getCurated(l).catch(() => ({ assets: [] as unknown[] }))),
+  );
+  const index = new Map<string, TxzRow>();
+  for (const l of lists) for (const a of (l.assets ?? []) as TxzRow[]) if (a.assetId) index.set(a.assetId, a);
+
+  const missing = wanted.filter((id) => !index.has(id));
+  await Promise.all(missing.map(async (id) => {
+    try {
+      const a = (await getAsset(id)) as TxzRow | null;
+      if (a?.assetId) index.set(id, a);
+    } catch {
+      // unknown to tokens.xyz now — dropped below
+    }
+  }));
+
+  const grades = await gradesFor(wanted);
+  return wanted.filter((id) => index.has(id)).map((id) => toRow(index.get(id)!, grades));
 }

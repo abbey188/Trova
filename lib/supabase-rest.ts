@@ -50,3 +50,13 @@ export async function insertRow(table: string, row: object): Promise<void> {
   });
   if (!res.ok) throw new Error(`supabase insert ${table} ${res.status}: ${await res.text()}`);
 }
+
+/** Delete the rows a PostgREST filter matches (e.g. "key_hash=eq.ab…&asset_id=eq.tesla"). */
+export async function deleteRows(table: string, filter: string): Promise<void> {
+  const { base, auth } = config();
+  const res = await fetch(`${base}/${table}?${filter}`, {
+    method: "DELETE",
+    headers: { ...auth, Prefer: "return=minimal" },
+  });
+  if (!res.ok) throw new Error(`supabase delete ${table} ${res.status}: ${await res.text()}`);
+}
