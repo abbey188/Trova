@@ -233,6 +233,22 @@ function exitPillar(v: TxzVariant): PillarScore<ExitComponents> {
   return { score, grade: gradeOf(score), components };
 }
 
+/**
+ * The five inputs confidence is counted from, each with whether this token reports it. Exported so
+ * the rating page can say "4 of 5 reported" and name the missing one from the same list the score
+ * uses — never from a second copy that could drift.
+ */
+export function reportedInputs(v: TxzVariant, ctx: ScoreContext = {}): { key: string; label: string; reported: boolean }[] {
+  const issuerConfirmed = ctx.issuerConfirmed === true || Boolean(v.issuer && v.issuerUrl);
+  return [
+    { key: "redemption", label: "Redemption terms", reported: v.stockVariantTier != null },
+    { key: "issuer", label: "Issuer", reported: Boolean(v.issuer || v.label) || issuerConfirmed },
+    { key: "execution", label: "Fill quality", reported: v.executionQuality != null },
+    { key: "holders", label: "Holder count", reported: (v.market.holder ?? 0) > 0 },
+    { key: "trades", label: "Trades in the last 24h", reported: (v.market.trade24h ?? 0) > 0 },
+  ];
+}
+
 export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore {
   const instrument = classifyInstrument(v, ctx);
   const ownership = ownershipPillar(v, instrument);
@@ -246,13 +262,7 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
   const issuerConfirmed = ctx.issuerConfirmed === true || Boolean(v.issuer && v.issuerUrl);
 
   // Confidence = share of key inputs actually reported (missing data ≠ risk, but less certainty).
-  const reported = [
-    ownership.components.redemptionReported,
-    issuerNamed || issuerConfirmed,
-    v.executionQuality != null,
-    (v.market.holder ?? 0) > 0,
-    traded24h,
-  ].filter(Boolean).length;
+  const reported = reportedInputs(v, ctx).filter((i) => i.reported).length;
   const confidence: Confidence = reported >= 4 ? "high" : reported === 3 ? "medium" : "low";
 
   // Not rated: no redemption path reported, no trading, and almost nothing else reported.

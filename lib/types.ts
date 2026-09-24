@@ -245,6 +245,8 @@ export interface Holding {
   sellNow?: { status: "ok" | "no-route" | "unavailable"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[] } | null;
   /** Daily rating history for the held variant, oldest first. */
   history?: VariantHistory | null;
+  /** This holding's own reason, in one line, plus the component holding it back. */
+  why?: { headline: string; holdingBack: import("./explain").Driver | null; movement: string | null } | null;
   returnPct?: number;
   betterVariant?: Variant | null; // highest-scoring routable variant of the same asset, if better
   closeCall?: boolean;          // best pick is within CLOSE_CALL_MARGIN of the runner-up
@@ -426,6 +428,8 @@ export interface PriceReference {
 
 export interface AssetVariantView extends Variant {
   isBest: boolean;
+  /** Why THIS token is rated as it is — headline, drivers, re-scored scenarios, benefits. */
+  explanation?: import("./explain").Explanation;
   /** Daily rating history behind the chart, oldest first. Null when we have never snapshotted it. */
   history?: VariantHistory | null;
   /** Measured cost to get in and back out, at a few sizes. Best variant only. */

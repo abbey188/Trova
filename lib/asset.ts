@@ -2,6 +2,7 @@
 // "which one should I hold?". Read-only. Price data is display-only and never scored.
 
 import { getBackpackIssuedMints, getExternalKlines, getExternalTickers, getSecurities, type BpKline } from "./backpack";
+import { explain } from "./explain";
 import { getVariantHistory } from "./history";
 import { exitLadder } from "./jupiter";
 import { getScaledUiAmounts } from "./token-extensions";
@@ -172,6 +173,15 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     }
   } catch {
     warnings.push("Corporate actions unavailable for this asset.");
+  }
+
+  // Why each token is rated as it is, from its own inputs — after corporate actions are attached,
+  // since a reinvested distribution is evidence for the benefits list.
+  const rawByMint = new Map(ranked.map((r) => [r.variant.mint, r.variant]));
+  for (const v of views) {
+    const raw = rawByMint.get(v.mint);
+    if (!raw) continue;
+    v.explanation = explain(raw, v.score, ctxFor(raw), { trend: v.history?.trend ?? null, corporateAction: v.corporateAction ?? null });
   }
 
   // What it costs to get in and back out of the best variant, at three sizes — measured, not modelled.

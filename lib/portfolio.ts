@@ -6,6 +6,7 @@
 import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
+import { explain } from "./explain";
 import { getVariantHistory } from "./history";
 import { sellNow } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
@@ -317,6 +318,10 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       betterVariant: better ? view(better) : null,
       closeCall: better ? closeCall : false,
       history: history?.get(h.mint) ?? null,
+      why: (() => {
+        const e = explain(mine.variant, mine.score, ctxFor(mine.variant), { trend: history?.get(h.mint)?.trend ?? null });
+        return { headline: e.headline, holdingBack: e.holdingBack, movement: e.movement };
+      })(),
     });
   }
   holdings.sort((a, b) => b.valueUsd - a.valueUsd);

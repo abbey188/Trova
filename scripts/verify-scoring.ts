@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import { borderlineOf, classifyInstrument, pickBest, rankVariants, redemptionNote, scoreVariant } from "../lib/trust-score";
+import { explain } from "../lib/explain";
 import type { TxzMarket, TxzVariant } from "../lib/types";
 
 type Fixture = Omit<Partial<TxzVariant>, "market"> & { market?: Partial<TxzMarket> };
@@ -184,6 +185,101 @@ check("best pick skips not-rated and non-routable variants", () => {
     variant({ mint: "deep", stockVariantTier: "cash_redeemable" }),
   ]);
   assert.equal(pickBest(ranked).best?.variant.mint, "deep");
+});
+
+
+// ---- explanations (lib/explain.ts): every line from the token's own inputs ----
+
+const why = (f: Fixture, opts: Parameters<typeof explain>[3] = {}, ctx = {}) => {
+  const v = variant(f);
+  return { v, s: scoreVariant(v, ctx), e: explain(v, scoreVariant(v, ctx), ctx, opts) };
+};
+
+check("every scenario number is the engine's own re-score, not an estimate", () => {
+  const { v, e } = why({});
+  const redeem = e.scenarios.find((x) => x.key === "redeem-share");
+  assert.ok(redeem, "a cash-redeemable token should offer the share-redemption scenario");
+  assert.equal(redeem.after.score, scoreVariant({ ...v, stockVariantTier: "share_redeemable" }).score);
+});
+
+check("a share-redeemable token is not offered share redemption as an improvement", () => {
+  const { e } = why({ stockVariantTier: "share_redeemable" });
+  assert.equal(e.scenarios.some((x) => x.key === "redeem-share"), false);
+});
+
+check("pre-IPO exposure is never shown climbing via share redemption", () => {
+  const { e } = why({ issuer: "PreStocks", stockVariantTier: "not_redeemable" }, {}, { canonicalSource: "prestocks" });
+  assert.equal(e.scenarios.some((x) => x.key === "redeem-share"), false);
+  assert.match(e.headline, /SPV/);
+});
+
+check("a tradable token shows what losing its market would do", () => {
+  const { e } = why({});
+  const floor = e.scenarios.find((x) => x.key === "liquidity-floor");
+  assert.ok(floor);
+  assert.equal(floor.after.routable, false);
+});
+
+check("a dead token shows what an ordinary market would do instead", () => {
+  const { e } = why({ market: { liquidity: 0.3, trade24h: 0, volume24hUSD: 0, holder: 19 } });
+  assert.ok(e.scenarios.some((x) => x.key === "typical-market" && x.direction === "up"));
+  assert.match(e.headline, /market is not/);
+});
+
+check("an advisory is the headline, and lifting it is the scenario", () => {
+  const { e } = why({ advisory: { status: "caution", reason: "issuer paused redemptions" } });
+  assert.match(e.headline, /caution warning — issuer paused redemptions/);
+  assert.equal(e.holdingBack?.key, "advisory");
+  assert.ok(e.scenarios.some((x) => x.key === "advisory-cleared"));
+});
+
+check("the weakest lever is named: cash-only redemption on a deep market", () => {
+  const { e } = why({ market: MAX });
+  assert.equal(e.holdingBack?.key, "redemption");
+});
+
+check("the weakest lever is named: a thin market under sound paperwork", () => {
+  const { e } = why({ stockVariantTier: "share_redeemable", market: { liquidity: 120_000, trade24h: 60, volume24hUSD: 8_000, holder: 900 } });
+  assert.equal(e.holdingBack?.pillar, "exit");
+});
+
+check("a positive headline never carries a negative clause", () => {
+  const { e } = why({ market: MAX });
+  assert.match(e.headline, /^Strong on both halves: cash-redeemable/);
+});
+
+check("confidence inputs are the engine's list, missing ones named", () => {
+  const { e } = why({ issuer: "Backed", executionQuality: null });
+  assert.equal(e.inputs.length, 5);
+  assert.deepEqual(e.inputs.filter((i) => !i.reported).map((i) => i.key), ["execution"]);
+});
+
+check("a fractional multiplier is reinvested distributions; a whole one is a split", () => {
+  const ca = (m: number) => ({ multiplier: m, newMultiplier: m, effectiveAt: null, pending: false });
+  const div = (m: number) => why({}, { corporateAction: ca(m) }).e.benefits.find((b) => b.key === "dividends")!.status;
+  assert.equal(div(1.002852), "reinvested");
+  assert.equal(div(10), "not-stated");
+  assert.equal(div(1), "not-stated");
+});
+
+check("pre-IPO benefits come from the issuer's own statement: no dividends, no voting", () => {
+  const { e } = why({ issuer: "PreStocks", stockVariantTier: "not_redeemable" }, {}, { canonicalSource: "prestocks" });
+  assert.equal(e.benefits.find((b) => b.key === "dividends")!.status, "no");
+  assert.equal(e.benefits.find((b) => b.key === "voting")!.status, "no");
+});
+
+check("an unstated right reads as not stated, never as no", () => {
+  const { e } = why({});
+  assert.equal(e.benefits.find((b) => b.key === "voting")!.status, "not-stated");
+});
+
+check("a collapse that leaves dollars behind is not rounded to 100%", () => {
+  const trend = { days: 9, scoreChange: -40, scoreFrom: 80, scoreTo: 40, liquidityChangePct: -99.97, holdersChange: 0,
+    direction: "down" as const, flat: false, gradeChanged: true, lostRoutability: true };
+  const { e } = why({ market: { liquidity: 39 } }, { trend });
+  const liq = e.drivers.find((d) => d.key === "liquidity")!;
+  assert.match(liq.fact, /down more than 99%/);
+  assert.match(e.movement!, /Stopped being tradable/);
 });
 
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);
