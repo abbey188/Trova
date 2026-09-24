@@ -245,6 +245,10 @@ export interface Holding {
   sellNow?: { status: "ok" | "no-route" | "unavailable"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[] } | null;
   /** Daily rating history for the held variant, oldest first. */
   history?: VariantHistory | null;
+  /** Up to 90 daily closes of THIS token (not a sibling variant), oldest first — the row sparkline. */
+  spark?: number[] | null;
+  /** Change across `spark`, in %. Display only. */
+  sparkChangePct?: number | null;
   /** This holding's own reason, in one line, plus the component holding it back. */
   why?: { headline: string; holdingBack: import("./explain").Driver | null; movement: string | null } | null;
   returnPct?: number;
@@ -276,6 +280,8 @@ export interface MarketRow {
 /** The markets screen. Each section degrades on its own. */
 export interface MarketsOverview {
   asOf: number;
+  /** Companies reachable only through pre-IPO exposure. Always shown as Speculative. */
+  privateCompanies: MarketRow[];
   trending: MarketRow[];
   lists: { list: string; rows: MarketRow[] }[];
   warnings: string[];
@@ -288,14 +294,23 @@ export interface Candle {
   volume: number;
 }
 
-/** Price history for the chart. Token price and the real stock price are separate series:
- *  they are only the same thing when the token actually tracks 1:1, which is the point. */
-export interface PriceHistory {
-  interval: string;
-  /** The token's own on-chain price. */
+/** One price series: the token's own candles, plus the listed stock's closes when comparable 1:1. */
+export interface PriceSeries {
   token: Candle[];
-  /** The listed stock's real price, when the two are comparable 1:1. Null otherwise. */
   reference: { ticker: string; closes: { time: number; close: number }[] } | null;
+}
+
+/** Price history for the chart. Token and real-stock prices stay separate series: they are only the
+ *  same thing when the token actually tracks 1:1, which is the point. */
+export interface PriceHistory {
+  /** Whose token candles these are (tokens.xyz's primary variant for the asset). */
+  mint: string | null;
+  /** Up to a year of daily data. The 1W, 1M, 3M and 1Y tabs are slices of it. */
+  daily: PriceSeries;
+  /** The last 24 hours, hourly: the 1D tab. */
+  intraday: PriceSeries | null;
+  /** From the real stock when there is one, else from the token; `basis` says which. */
+  ranges: { basis: "reference" | "token"; day: { low: number; high: number } | null; week52: { low: number; high: number } | null };
 }
 
 /**
@@ -351,7 +366,10 @@ export interface VariantHistory {
   assetId: string;
   symbol: string;
   points: HistoryPoint[];
+  /** Over every point returned. */
   trend: TrendSummary;
+  /** Over the last seven days only — what "+465 this week" means. */
+  trend7d: TrendSummary;
 }
 
 /** What Trova watched across the whole universe — the monitoring proof on the home screen. */
@@ -463,6 +481,10 @@ export interface AssetDetail {
   externalRating: ExternalRating | null;
   /** Real price history for the chart. Null when no source had any. */
   priceHistory: PriceHistory | null;
+  /** tokens.xyz's description of the company. */
+  about: string | null;
+  /** Share-equivalents on-chain across every token for this company. */
+  tokenizedSupply: number | null;
   signals: Signal[];
   historyDays: number;
   warnings: string[];
@@ -478,6 +500,18 @@ export interface PortfolioSummary {
   otherTokens: number;          // tokens outside Trova's curated universe (not scored)
   scores: { overall: number; ownership: number; exit: number }; // value-weighted 0..100, rated holdings only
   needsAttentionUsd: number;    // value in holdings that are not routable, grade D, not rated, or under an advisory
+  needsAttentionCount: number;  // how many holdings that value is spread across
+  speculativeCount: number;
+  /**
+   * What the holdings you have TODAY were worth each day. Not your returns: we cannot see what you
+   * paid, so this never claims a gain. Only holdings priced from their own live market are charted;
+   * the rest are listed in `excluded` with the reason.
+   */
+  valueHistory: {
+    points: { time: number; valueUsd: number }[];
+    coveredUsd: number;
+    excluded: { symbol: string; valueUsd: number; reason: string }[];
+  } | null;
   speculativeUsd: number;       // value in speculative instruments (pre-IPO exposure)
   allocationByGrade: Record<Rating, number>;    // % of holdings value
   allocationByTier: Record<Tier, number>;       // % of holdings value

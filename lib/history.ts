@@ -146,6 +146,9 @@ export async function getVariantHistory(mints: string[], days = 30): Promise<Map
     else byMint.set(r.mint, [r]);
   }
 
+  // "This week" is what the cards say ("+465 · 7 days"), so it is computed, not inferred from the
+  // whole window. Eight daily points span seven days of change.
+  const weekStart = isoDay(Date.now() - 7 * 86_400_000);
   for (const [mint, list] of byMint) {
     const points = list.map(toPoint);
     out.set(mint, {
@@ -154,6 +157,7 @@ export async function getVariantHistory(mints: string[], days = 30): Promise<Map
       symbol: list[0].symbol,
       points,
       trend: summariseTrend(points),
+      trend7d: summariseTrend(points.filter((p) => p.date >= weekStart)),
     });
   }
   return out;

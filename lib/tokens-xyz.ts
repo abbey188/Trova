@@ -124,11 +124,19 @@ export async function getTrending() {
  * candles — `days` and `limit` are both ignored, `from`/`to` (unix seconds) are what widen it.
  * 1W returns nothing at all; 1H works. So a 90-day chart must pass a range or it silently shows
  * a week.
+ *
+ * Without `mint` the candles are the asset's PRIMARY variant (TSLAx for Tesla). `mint=` returns that
+ * variant's own series — required for a holding, or TSLAon would be charted with TSLAx's prices.
  */
-export async function getOhlcv(assetId: string, interval = "1D", from?: number, to?: number) {
+export async function getOhlcv(
+  assetId: string,
+  interval = "1D",
+  { from, to, mint }: { from?: number; to?: number; mint?: string } = {},
+) {
   const params: Record<string, string> = { interval };
   if (from) params.from = String(Math.floor(from));
   if (to) params.to = String(Math.floor(to));
+  if (mint) params.mint = mint;
   return req<TxzOhlcv>(`/assets/${encodeURIComponent(assetId)}/ohlcv`, { params, ttlMs: 60_000 });
 }
 

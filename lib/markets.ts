@@ -157,8 +157,11 @@ export async function getMarketsOverview(lists: CuratedList[] = ["stocks", "etfs
     ...byList.flatMap((b) => b.rows.map((r) => r.assetId ?? "")),
   ].filter(Boolean));
 
+  const privateCompanies = await soft("Private companies", privateCompanyRows(), [] as MarketRow[]);
+
   return {
     asOf: Date.now(),
+    privateCompanies,
     trending: trendingRows.filter((r) => r.assetId).map((r) => toRow(r, grades)),
     lists: byList.map(({ list, rows }) => ({
       list,
@@ -195,4 +198,23 @@ export async function getAssetRows(assetIds: string[]): Promise<MarketRow[]> {
 
   const grades = await gradesFor(wanted);
   return wanted.filter((id) => index.has(id)).map((id) => toRow(index.get(id)!, grades));
+}
+
+/**
+ * Companies you can only reach through pre-IPO exposure: every token we track for them is SPV
+ * exposure. An asset with even one listed token is not here. SpaceX, whose leftover pre-IPO wrappers
+ * sit beside a cash-redeemable tracker, is a listed company with speculative siblings, not a
+ * private one.
+ */
+async function privateCompanyRows(): Promise<MarketRow[]> {
+  const latest = await selectRows<{ snapshot_date: string }>(
+    "variant_snapshots", "select=snapshot_date&order=snapshot_date.desc&limit=1");
+  const date = latest[0]?.snapshot_date;
+  if (!date) return [];
+  const rows = await selectRows<{ asset_id: string; speculative: boolean }>(
+    "variant_snapshots", `select=asset_id,speculative&snapshot_date=eq.${date}`);
+  const allSpeculative = new Map<string, boolean>();
+  for (const r of rows) allSpeculative.set(r.asset_id, (allSpeculative.get(r.asset_id) ?? true) && r.speculative);
+  const ids = [...allSpeculative].filter(([, all]) => all).map(([id]) => id);
+  return getAssetRows(ids);
 }

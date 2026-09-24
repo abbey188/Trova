@@ -12,8 +12,8 @@ import { sellNow } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals, sortSignals } from "./signals";
-import { getVariantMarkets, getVariants, resolveIssuer, type TxzVariantMarket } from "./tokens-xyz";
-import { METHOD_VERSION, pickBest, portfolioScores, rankVariants, type RankedVariant, type ScoreContext } from "./trust-score";
+import { getOhlcv, getVariantMarkets, getVariants, resolveIssuer, type TxzVariantMarket } from "./tokens-xyz";
+import { METHOD_VERSION, needsAttention, pickBest, portfolioScores, rankVariants, type RankedVariant, type ScoreContext } from "./trust-score";
 import { getCuratedUniverse, type UniverseEntry } from "./universe";
 import type { Asset, CashBalance, ExitQuote, Holding, PortfolioSummary, Rating, Signal, Tier, TrovaScore, TxzVariant, Variant } from "./types";
 
@@ -333,7 +333,21 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   // balance today, one way — and it is what the holdings list shows. `exitQuote` is the round trip,
   // kept for the asset-page comparison between tokens. In a thin market they differ enormously:
   // most of a round trip's loss is buying INTO the thin market, which a holder never has to do.
-  await pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 1, async (h) => {
+  const closesByMint = new Map<string, { time: number; close: number }[]>();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const chartTargets = holdings.slice(0, CHARTED_HOLDINGS).filter((h) => h.valueUsd > 0);
+  const charts = pool(chartTargets, 4, async (h) => {
+    try {
+      const o = await getOhlcv(h.asset.assetId, "1D", { from: nowSec - 365 * 86_400, to: nowSec, mint: h.variant.mint });
+      // Only this token's own series. A sibling variant's prices would chart TSLAon as if it were TSLAx.
+      if (o?.mint !== h.variant.mint) return;
+      closesByMint.set(h.variant.mint, (o.candles ?? []).filter((c) => Number.isFinite(c.close) && c.close > 0).map((c) => ({ time: c.time, close: c.close })));
+    } catch {
+      // a holding without a chart is still a holding
+    }
+  });
+
+  const quotes = pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 1, async (h) => {
     if (!(h.valueUsd > 0)) return;
     try {
       const raw = rawAmounts.get(h.variant.mint) ?? 0n;
@@ -352,6 +366,15 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       h.exitQuote = null;
     }
   });
+  await Promise.all([charts, quotes]);
+
+  for (const h of holdings) {
+    const closes = closesByMint.get(h.variant.mint);
+    if (!closes?.length) continue;
+    const last90 = closes.slice(-SPARK_DAYS).map((c) => c.close);
+    h.spark = last90;
+    h.sparkChangePct = last90.length > 1 ? ((last90[last90.length - 1] - last90[0]) / last90[0]) * 100 : null;
+  }
 
   const scored = portfolioScores(holdings.map((h) => ({ valueUsd: h.valueUsd, score: h.variant.score })));
   return {
@@ -364,7 +387,10 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     otherTokens,
     scores: { overall: scored.overall, ownership: scored.ownership, exit: scored.exit },
     needsAttentionUsd: scored.needsAttentionUsd,
+    needsAttentionCount: holdings.filter((h) => h.valueUsd > 0 && needsAttention(h.variant.score)).length,
     speculativeUsd: scored.speculativeUsd,
+    speculativeCount: holdings.filter((h) => h.valueUsd > 0 && h.variant.score.instrument.speculative).length,
+    valueHistory: valueHistory(holdings, closesByMint),
     allocationByGrade: shareBy<Rating>(holdings, ["A", "B", "C", "D", "NR"], (h) => h.variant.score.grade),
     allocationByTier: shareBy<Tier>(holdings, ["tier1", "tier2", "tier3"], (h) => h.variant.tier),
     allocationByClass: shareBy<string>(holdings, [], (h) => h.asset.assetClass),
@@ -373,4 +399,60 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     historyDays,
     warnings,
   };
+}
+
+/** Holdings charted on the home screen, largest first. One candle request each. */
+const CHARTED_HOLDINGS = 15;
+/** Days in a holding's row sparkline. */
+const SPARK_DAYS = 90;
+
+/**
+ * What today's holdings were worth each day, over the window every charted holding shares.
+ *
+ * Only holdings priced from their own live market are included. A dead variant's candles are its
+ * stale last trade repeated, and charting them would draw a flat line worth hundreds of times the
+ * real stock (CLSKx sat at $1,684 against $12.60). Those are listed in `excluded` instead.
+ *
+ * Days a token did not trade carry its previous close forward, as any daily valuation does. The
+ * series starts on the first day EVERY included holding has a price, so a newly listed token can
+ * never appear as a jump in value.
+ */
+function valueHistory(
+  holdings: Holding[],
+  closesByMint: Map<string, { time: number; close: number }[]>,
+): PortfolioSummary["valueHistory"] {
+  const included: { amount: number; closes: Map<number, number> }[] = [];
+  const excluded: { symbol: string; valueUsd: number; reason: string }[] = [];
+  let coveredUsd = 0;
+  const day = (t: number) => Math.floor(t / 86_400) * 86_400;
+
+  for (const h of holdings) {
+    if (!(h.valueUsd > 0)) continue;
+    const closes = closesByMint.get(h.variant.mint);
+    if (h.valuation.source !== "market") {
+      excluded.push({ symbol: h.variant.symbol, valueUsd: h.valueUsd, reason: "priced from the real stock, not its own market" });
+      continue;
+    }
+    if (!closes?.length) {
+      excluded.push({ symbol: h.variant.symbol, valueUsd: h.valueUsd, reason: "no price history" });
+      continue;
+    }
+    included.push({ amount: h.amount, closes: new Map(closes.map((c) => [day(c.time), c.close])) });
+    coveredUsd += h.valueUsd;
+  }
+  if (included.length === 0) return null;
+
+  const start = Math.max(...included.map((i) => Math.min(...i.closes.keys())));
+  const days = [...new Set(included.flatMap((i) => [...i.closes.keys()]))].filter((d) => d >= start).sort((a, b) => a - b);
+  const last = included.map((i) => i.closes.get(start) ?? 0);
+  const points = days.map((d) => {
+    let valueUsd = 0;
+    included.forEach((i, k) => {
+      const c = i.closes.get(d);
+      if (c != null) last[k] = c;
+      valueUsd += i.amount * last[k];
+    });
+    return { time: d, valueUsd };
+  });
+  return { points, coveredUsd, excluded };
 }

@@ -111,16 +111,20 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
   const feedSymbol = shareFeed ?? metalFeed;
   const basis: PriceBasis = metalFeed ? "ounce" : "share";
 
-  const [pyth, externalTickers, change, history, risk, ohlcv, klines] = await Promise.all([
+  const nowSec = Math.floor(Date.now() / 1000);
+  const yearAgo = nowSec - HISTORY_DAYS * 86_400;
+  const dayAgo = nowSec - 86_400;
+  const withReference = Boolean(shareFeed && quotedByBackpack);
+  const [pyth, externalTickers, change, history, risk, daily, intraday, klinesDaily, klinesHourly] = await Promise.all([
     feedSymbol ? soft("Pyth prices", getPythPrices([feedSymbol])) : Promise.resolve(null),
-    shareFeed && quotedByBackpack ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
+    withReference ? soft("Backpack reference prices", getExternalTickers()) : Promise.resolve(null),
     variants.length ? soft("Change history", getChangeSignals({ mints: variants.map((v) => v.mint), days: 30 })) : Promise.resolve(null),
     variants.length ? soft("Rating history", getVariantHistory(variants.map((v) => v.mint), 30)) : Promise.resolve(null),
     soft("Market risk rating", getRiskSummary(assetId)),
-    soft("Price history", getOhlcv(assetId, "1D", Date.now() / 1000 - HISTORY_DAYS * 86_400, Date.now() / 1000)),
-    shareFeed && quotedByBackpack
-      ? soft("Reference price history", getExternalKlines(ticker, "1d", Math.floor(Date.now() / 1000) - HISTORY_DAYS * 86_400))
-      : Promise.resolve(null),
+    soft("Price history", getOhlcv(assetId, "1D", { from: yearAgo, to: nowSec })),
+    soft("Intraday price", getOhlcv(assetId, "1H", { from: dayAgo, to: nowSec })),
+    withReference ? soft("Reference price history", getExternalKlines(ticker, "1d", yearAgo)) : Promise.resolve(null),
+    withReference ? soft("Reference intraday", getExternalKlines(ticker, "1h", dayAgo)) : Promise.resolve(null),
   ]);
 
   const pythPrice = feedSymbol ? pyth?.get(feedSymbol) : undefined;
@@ -146,6 +150,22 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
 
   const ranked = rankVariants(variants, ctxFor);
   const { best, runnerUp, closeCall } = pickBest(ranked);
+
+  // The chart must show the token we put first. tokens.xyz's primary can differ, and for a mixed
+  // asset the difference is a unit: for "gold" it is a per-OUNCE spot token (~$4,300) while our best
+  // is GLDx, a per-SHARE ETF tracker (~$394). Refetch by mint whenever the two disagree.
+  let chartDaily = daily;
+  let chartIntraday = intraday;
+  if (best && daily?.mint && best.variant.mint !== daily.mint) {
+    const [d, h] = await Promise.all([
+      soft("Price history", getOhlcv(assetId, "1D", { from: yearAgo, to: nowSec, mint: best.variant.mint })),
+      soft("Intraday price", getOhlcv(assetId, "1H", { from: dayAgo, to: nowSec, mint: best.variant.mint })),
+    ]);
+    if (d?.mint === best.variant.mint) {
+      chartDaily = d;
+      chartIntraday = h?.mint === best.variant.mint ? h : null;
+    }
+  }
 
   const views: AssetVariantView[] = ranked.map(({ variant, score }) => {
     const view = variantView(variant, score, assetId, backpackMints?.has(variant.mint) ?? false);
@@ -219,15 +239,17 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
     variants: views,
     best: best ? { mint: best.variant.mint, symbol: best.variant.symbol, closeCall, runnerUpMint: runnerUp?.variant.mint ?? null } : null,
     externalRating: externalRating(risk),
-    priceHistory: priceHistory(ohlcv?.candles, klines, ticker, reference),
+    priceHistory: priceHistory(chartDaily, chartIntraday, klinesDaily, klinesHourly, ticker, reference),
+    about: aboutText(asset),
+    tokenizedSupply: tokenizedSupply(variants),
     signals: change?.signals ?? [],
     historyDays,
     warnings,
   };
 }
 
-/** How many days of price history the asset page charts. */
-const HISTORY_DAYS = 90;
+/** Days of price history the asset page fetches: the 1Y tab and a 52-week range. */
+const HISTORY_DAYS = 365;
 
 /**
  * tokens.xyz's market risk score, normalised for display beside ours.
@@ -256,28 +278,82 @@ function externalRating(risk: TxzRiskSummary | null | undefined): ExternalRating
   };
 }
 
-/**
- * Price history for the chart: the token's own candles, plus the real stock's closes when the two
- * are comparable 1:1. They are kept as separate series on purpose — a dead variant quoting a stale
- * last trade against a live stock price is a fact worth seeing, not one to average away.
- */
-function priceHistory(
-  candles: TxzOhlcv["candles"] | undefined,
-  klines: BpKline[] | null | undefined,
-  ticker: string,
-  reference: PriceReference | null,
-): PriceHistory | null {
-  const token: Candle[] = (candles ?? [])
+const toCandles = (candles: TxzOhlcv["candles"] | undefined): Candle[] =>
+  (candles ?? [])
     .filter((c) => Number.isFinite(c.close))
     .map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }));
 
-  // Only chart the real stock alongside when the reference is per-share — never a per-ounce metal.
-  const closes = reference?.basis === "share" && klines?.length
-    ? klines
-        .map((k) => ({ time: Math.floor(Date.parse(`${k.start.replace(" ", "T")}Z`) / 1000), close: Number(k.close) }))
-        .filter((k) => Number.isFinite(k.time) && Number.isFinite(k.close))
-    : [];
+const toCloses = (klines: BpKline[] | null | undefined) =>
+  (klines ?? [])
+    .map((k) => ({ time: Math.floor(Date.parse(`${k.start.replace(" ", "T")}Z`) / 1000), close: Number(k.close) }))
+    .filter((k) => Number.isFinite(k.time) && Number.isFinite(k.close) && k.close > 0);
 
-  if (token.length === 0 && closes.length === 0) return null;
-  return { interval: "1D", token, reference: closes.length ? { ticker, closes } : null };
+function range(values: number[]): { low: number; high: number } | null {
+  const v = values.filter((n) => Number.isFinite(n) && n > 0);
+  return v.length ? { low: Math.min(...v), high: Math.max(...v) } : null;
+}
+
+/** tokens.xyz's description of the company, when it has one. */
+function aboutText(asset: unknown): string | null {
+  const d = (asset as { description?: unknown } | null)?.description;
+  return typeof d === "string" && d.trim() ? d.trim() : null;
+}
+
+/**
+ * Share-equivalents on-chain across every token for this company (tokens.xyz reports scaled units).
+ * Only when every token counts the same unit: gold's tokens mix troy ounces and ETF shares, and a
+ * sum of the two is not a quantity of anything.
+ */
+function tokenizedSupply(variants: TxzVariant[]): number | null {
+  if (new Set(variants.map((v) => v.kind)).size !== 1) return null;
+  const supplies = variants
+    .map((v) => v.market.circulatingSupply ?? v.market.totalSupply)
+    .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
+  return supplies.length ? supplies.reduce((a, b) => a + b, 0) : null;
+}
+
+/**
+ * Price history for the chart: a year of daily candles and the last 24 hours hourly, each with the
+ * real stock's closes alongside when the two are comparable 1:1. Kept as SEPARATE series on purpose:
+ * a dead variant quoting a stale last trade against a live stock price is a fact worth seeing, not
+ * one to average away. The 1W, 1M, 3M and 1Y tabs are slices of `daily`; 1D is `intraday`.
+ *
+ * Day and 52-week ranges come from the real stock where there is one, else from the token, and
+ * `basis` says which.
+ */
+function priceHistory(
+  daily: TxzOhlcv | null | undefined,
+  intraday: TxzOhlcv | null | undefined,
+  klinesDaily: BpKline[] | null | undefined,
+  klinesHourly: BpKline[] | null | undefined,
+  ticker: string,
+  reference: PriceReference | null,
+): PriceHistory | null {
+  // Only chart the real stock alongside when the reference is per-share, never a per-ounce metal.
+  const perShare = reference?.basis === "share";
+  const dailyToken = toCandles(daily?.candles);
+  const hourlyToken = toCandles(intraday?.candles);
+  const dailyRef = perShare ? toCloses(klinesDaily) : [];
+  const hourlyRef = perShare ? toCloses(klinesHourly) : [];
+
+  if (dailyToken.length === 0 && dailyRef.length === 0) return null;
+
+  const useReference = dailyRef.length > 0;
+  const yearAgo = Date.now() / 1000 - 365 * 86_400;
+  return {
+    mint: daily?.mint ?? null,
+    daily: { token: dailyToken, reference: dailyRef.length ? { ticker, closes: dailyRef } : null },
+    intraday: hourlyToken.length || hourlyRef.length
+      ? { token: hourlyToken, reference: hourlyRef.length ? { ticker, closes: hourlyRef } : null }
+      : null,
+    ranges: {
+      basis: useReference ? "reference" : "token",
+      // Closes, not highs and lows: in a thin token one stray fill makes a wick nobody could trade
+      // at (gold's token candles showed a $5,652 "high" against a ~$4,300 market).
+      day: useReference ? range(hourlyRef.map((c) => c.close)) : range(hourlyToken.map((c) => c.close)),
+      week52: useReference
+        ? range(dailyRef.filter((c) => c.time >= yearAgo).map((c) => c.close))
+        : range(dailyToken.filter((c) => c.time >= yearAgo).map((c) => c.close)),
+    },
+  };
 }
