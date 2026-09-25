@@ -7,3 +7,9 @@ node_modules/
 .vercel
 .env*
 design/**/trova-*.html
+
+# Internal working notes — kept locally, never published
+CLAUDE.md
+FIRST_PROMPT.md
+SPEC.md
+FLOW.md
