@@ -154,7 +154,7 @@ export default async function Landing() {
 
         <div style={{ flexGrow: 1, display: "flex", gap: 60, padding: "40px 56px 44px" }}>
           <div style={{ width: 560, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-            <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>A credit rating for tokenized stocks</span>
+            <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>A safety rating for tokenized stocks</span>
             <h1 style={{ margin: "18px 0 0", ...D, fontSize: 62, lineHeight: 1.02, fontWeight: 700, letterSpacing: -2 }}>Know what<br />you own</h1>
             <p style={{ margin: "22px 0 0", fontSize: 16, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: "46ch" }}>
               The same stock exists on Solana as several tokens that look identical on a chart. Some redeem for the real share, some pay its cash value, some give you no rights at all — and some you can&apos;t sell at any size. Trova rates what you&apos;d own and whether you can get out.

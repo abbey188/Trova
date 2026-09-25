@@ -1,6 +1,6 @@
 # Trova
 
-**A credit rating for tokenized stocks on Solana.**
+**A safety rating for tokenized stocks on Solana.**
 
 The same stock exists on Solana as several different tokens. On a price chart they look identical. They are not: some redeem for the real share, some pay its cash value, some give you exposure with no rights at all, and some cannot be sold at any real size. Trova tells you what you would actually own, and whether you can get back out — then lets you buy the soundest token, move out of a weak one, and sell, from your own wallet.
 

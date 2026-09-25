@@ -143,7 +143,7 @@ export default async function DocsPage() {
           <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v3.2</span>
             <h1 style={{ ...DISPLAY, margin: 0, fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 700, letterSpacing: -1, lineHeight: 1.05 }}>How Trova rates a tokenized stock</h1>
-            <P>Trova is a credit rating for tokenized stocks on Solana. It asks two questions of every token — what would you own, and could you get back out — and nothing else. Every rating shows its working, and every rating updates as information becomes public.</P>
+            <P>Trova is a safety rating for tokenized stocks on Solana. It asks two questions of every token — what would you own, and could you get back out — and nothing else. Every rating shows its working, and every rating updates as information becomes public.</P>
           </header>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>

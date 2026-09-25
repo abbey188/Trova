@@ -18,7 +18,7 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Trova — a credit rating for tokenized stocks",
+  title: "Trova — a safety rating for tokenized stocks",
   description:
     "The same stock exists on Solana as several tokens with very different rights. Trova rates what you'd actually own and whether you can get out — then lets you buy the soundest one and sell whenever you want.",
 };
