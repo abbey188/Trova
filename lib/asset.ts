@@ -81,7 +81,10 @@ function variantView(v: TxzVariant, score: TrovaScore, assetId: string, backpack
 }
 
 /** Everything the asset page needs, or null when tokens.xyz knows nothing about the id. */
-export async function buildAssetDetail(assetId: string): Promise<AssetDetail | null> {
+export async function buildAssetDetail(
+  assetId: string,
+  { withExitLadder = false }: { withExitLadder?: boolean } = {},
+): Promise<AssetDetail | null> {
   const warnings: string[] = [];
   const soft = <T>(label: string, p: Promise<T>): Promise<T | null> =>
     p.catch((e) => { warnings.push(`${label} unavailable: ${message(e)}`); return null; });
@@ -205,7 +208,9 @@ export async function buildAssetDetail(assetId: string): Promise<AssetDetail | n
   }
 
   // What it costs to get in and back out of the best variant, at three sizes — measured, not modelled.
-  if (best) {
+  // Six sequential quotes under a 10-per-10s limit take seconds, so the page does not wait for them
+  // by default: GET /api/exit serves the ladder on its own and the screen fills it in when it lands.
+  if (best && withExitLadder) {
     try {
       const ladder = await exitLadder(best.variant.mint);
       const view = views.find((v) => v.mint === best.variant.mint);

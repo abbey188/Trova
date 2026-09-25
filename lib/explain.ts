@@ -297,7 +297,10 @@ function benefits(s: TrovaScore, v: TxzVariant, ca?: CorporateAction | null): Be
 function headline(v: TxzVariant, s: TrovaScore, holdingBack: Driver | null): string {
   if (s.hidden) return "Hidden: blocked by a tokens.xyz warning.";
   if (s.advisory) return `Capped by a tokens.xyz ${s.advisory.status} warning${s.advisory.reason ? ` — ${s.advisory.reason}` : ""}.`;
-  if (!s.rated) return s.notRatedReason ?? "Not rated — too little reported to score honestly.";
+  if (!s.rated) {
+    const reason = s.notRatedReason ?? "Not rated — too little reported to score honestly";
+    return reason.endsWith(".") ? reason : `${reason}.`;
+  }
 
   const liq = money(v.market.liquidity);
   const traded = (v.market.trade24h ?? 0) > 0;

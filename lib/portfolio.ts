@@ -224,13 +224,16 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const amounts = new Map(tokens.map((t) => [t.mint, t.amount]));
   const rawAmounts = new Map(tokens.map((t) => [t.mint, BigInt(t.rawAmount)]));
   amounts.set(NATIVE_SOL_MINT, (amounts.get(NATIVE_SOL_MINT) ?? 0) + solBalance);
-  // Wallets can hold thousands of unrelated tokens (the xStocks issuer wallet holds 1,254), so the
-  // mint→asset lookup goes out in capped batches and a failed batch only costs those tokens.
+  // Wallets can hold thousands of unrelated tokens (the xStocks issuer wallet holds 1,254; one TSLAx
+  // whale holds 2,582), so the mint→asset lookup goes out in capped batches and a failed batch only
+  // costs those tokens. Eight in flight, not three: measured 2026-09-25, 52 batches three at a time
+  // took ~10s of a 19s cold load, while all 52 at once returned in 1.9s with no 429s. Eight keeps
+  // headroom under tokens.xyz's unpublished limit, and 429s already retry with backoff.
   const mintList = [...amounts.keys()];
   const batches: string[][] = [];
   for (let i = 0; i < mintList.length; i += 50) batches.push(mintList.slice(i, i + 50));
   const markets = new Map<string, TxzVariantMarket>();
-  await pool(batches, 3, async (batch) => {
+  await pool(batches, 8, async (batch) => {
     try {
       for (const m of await getVariantMarkets(batch)) markets.set(m.mint, m);
     } catch (e) {

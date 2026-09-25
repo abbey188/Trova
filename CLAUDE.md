@@ -200,6 +200,22 @@ Design is agreed on a canvas (17 screens, desktop + mobile) before each screen i
   grade from the latest snapshot. Curated/search rows have NO `mint` (0 of 401 measured), so grades
   key on `asset_id` and pick the variant a buyer would be sent to (routable first, then score).
 - `GET /api/search?q=` → fuzzy search ("nvid" → NVIDIA), graded the same way.
+- `GET /api/exit?mint=&sizes=` → measured exit ladder (round trip at each size). Split from
+  /api/asset because it is the slow part (two quotes per rung); the page renders first and fills it
+  in. `/api/asset/<id>?ladder=1` still inlines it.
+- `GET /api/quote?inputMint=&outputMint=&amount=` → pay/get/route + `leaveAgain` (the sale quoted
+  straight back). `POST /api/swap` → UNSIGNED tx; the server re-quotes fresh, never trusts a quote
+  from the browser, and holds no keys.
+- `GET|PUT /api/me`, `GET|POST|DELETE /api/watchlist` (lib/user-data.ts) → per-DEVICE profile and
+  watchlist, keyed by SHA-256 of a random secret sent as `x-trova-key` (never a wallet, never a
+  signature — principle 1). Tables in `supabase/migrations/20260924000000_watchlist_and_profile.sql`,
+  RLS on with no policies. Until applied, both answer 503 `configured:false`.
+- Explanations (lib/explain.ts): every variant carries `explanation` (headline, drivers, scenarios
+  RE-SCORED through scoreVariant, inputs, benefits, movement); holdings carry `why`. Never hard-code
+  per-token copy in the UI — render these. `scripts/sweep-explanations.ts` runs it over every real token.
+- Jupiter pacing (lib/jupiter.ts) is a SLIDING WINDOW, 9 per 10.5s (measured limit 10 per ~10s). A
+  token bucket let ~17 through one window and caused false "unavailable". Only slot-taking is
+  serialised; timeouts start when a request leaves the queue.
 - `GET /api/signals?mints=&days=` (lib/signals.ts) → change events from snapshots. Structural
   changes (advisory/redemption/instrument class/tier) fire immediately; grade, tradability and
   market-health changes must hold 3 snapshots; method-version changes never fire a grade signal.

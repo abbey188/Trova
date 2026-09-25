@@ -58,35 +58,38 @@ const cache = new Map<string, { at: number; value: Fetched }>();
 let backoffUntil = 0;
 
 
-// Client-side pacing, sized to the measured window: spend the burst, then hold ~1/s. Cheaper than
-// discovering the limit through 429s, and it keeps a page's quotes arriving steadily.
-const BURST = 8;
-const REFILL_MS = 1_100;
-let tokens = BURST;
-let lastRefill = Date.now();
+// Client-side pacing that matches the limit we MEASURED: at most 10 requests in any ~10-second
+// sliding window. A token bucket (burst 8, then one per 1.1s) looked equivalent but is not — after
+// its burst it keeps refilling while those 8 are still inside the window, so ~17 requests could
+// land in one window and draw exactly the 429s the pacer existed to prevent. Under four concurrent
+// pages that surfaced as "unavailable" exit-ladder rungs. So: remember when each request left, and
+// never let more than WINDOW_MAX of them sit inside WINDOW_MS.
+const WINDOW_MAX = 9;          // one under the measured 10, for clock skew between us and them
+const WINDOW_MS = 10_500;
+const sent: number[] = [];
 let queue: Promise<void> = Promise.resolve();
 
 async function takeToken(): Promise<void> {
-  const now = Date.now();
-  const gained = Math.floor((now - lastRefill) / REFILL_MS);
-  if (gained > 0) {
-    tokens = Math.min(BURST, tokens + gained);
-    lastRefill = now;
+  for (;;) {
+    const now = Date.now();
+    while (sent.length && now - sent[0] >= WINDOW_MS) sent.shift();
+    if (sent.length < WINDOW_MAX) {
+      sent.push(now);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, WINDOW_MS - (now - sent[0]) + 5));
   }
-  if (tokens > 0) {
-    tokens--;
-    return;
-  }
-  const wait = REFILL_MS - ((now - lastRefill) % REFILL_MS);
-  await new Promise((r) => setTimeout(r, wait));
-  lastRefill = Date.now();
 }
 
-/** Serialise every outbound call through the pacer, so concurrent callers cannot burst past it. */
+/**
+ * Take a slot in the window, then run. Only the slot-taking is serialised: chaining the queue on the
+ * request itself made every call wait for the previous RESPONSE, so nothing ever ran in parallel
+ * even with the window half empty.
+ */
 function paced<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(takeToken).then(fn);
-  queue = run.then(() => undefined, () => undefined);
-  return run;
+  const slot = queue.then(takeToken);
+  queue = slot.catch(() => undefined);
+  return slot.then(fn);
 }
 
 function cached(key: string): Fetched | null {
@@ -283,9 +286,13 @@ export interface SwapRequest {
 export async function swapTransaction({ quote: q, userPublicKey, wrapAndUnwrapSol = true }: SwapRequest): Promise<string | null> {
   const { feeAccount } = referral();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const res = await fetch(`${BASE}/swap`, {
+    // Counts against the same limit as quotes, so it takes a slot like everything else — and, as
+    // with quotes, the timeout starts once the request leaves the queue, not while it waits.
+    const res = await paced(() => {
+      timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      return fetch(`${BASE}/swap`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...AUTH },
       body: JSON.stringify({
@@ -300,6 +307,7 @@ export async function swapTransaction({ quote: q, userPublicKey, wrapAndUnwrapSo
       }),
       signal: controller.signal,
       cache: "no-store",
+      });
     });
     if (!res.ok) {
       console.error("jupiter swap build failed", res.status, (await res.text()).slice(0, 300));
@@ -310,6 +318,6 @@ export async function swapTransaction({ quote: q, userPublicKey, wrapAndUnwrapSo
   } catch {
     return null;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
