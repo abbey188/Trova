@@ -12,7 +12,7 @@
 import { getBase58Decoder, getBase64Encoder, getTransactionDecoder } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { useWalletAccountTransactionSendingSigner } from "@solana/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -472,6 +472,7 @@ function SendButton({ account, disabled, phase, setPhase, request, label, note }
   note: string;
 }) {
   const signer = useWalletAccountTransactionSendingSigner(account, "solana:mainnet");
+  const qc = useQueryClient();
 
   async function go() {
     try {
@@ -488,7 +489,14 @@ function SendButton({ account, disabled, phase, setPhase, request, label, note }
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 1500));
         const s = await api<{ status: string }>(`/api/tx?signature=${signature}`).catch(() => ({ status: "unknown" }));
-        if (s.status === "confirmed" || s.status === "finalized") { setPhase({ kind: "done", signature }); return; }
+        if (s.status === "confirmed" || s.status === "finalized") {
+          setPhase({ kind: "done", signature });
+          // Re-read the wallet so the new balance — and the Sell button — show without a reload. The
+          // indexer can lag the chain by a moment, so read again shortly after.
+          qc.invalidateQueries({ queryKey: ["portfolio"] });
+          setTimeout(() => qc.invalidateQueries({ queryKey: ["portfolio"] }), 5_000);
+          return;
+        }
         if (s.status === "failed") { setPhase({ kind: "failed", message: "The trade failed on-chain and nothing changed hands.", signature }); return; }
       }
       setPhase({ kind: "failed", message: "Not confirmed after a minute. It may still land — check before trying again.", signature });

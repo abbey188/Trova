@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   }
   try {
     const portfolio = await buildPortfolio(wallet);
-    return Response.json(portfolio, { headers: { "Cache-Control": wallet === DEMO_WALLET ? "public, s-maxage=300, stale-while-revalidate=86400" : "private, max-age=15" } });
+    return Response.json(portfolio, { headers: { "Cache-Control": wallet === DEMO_WALLET ? "public, s-maxage=300, stale-while-revalidate=86400" : "private, no-store" } });
   } catch (e) {
     console.error("portfolio failed", e);
     return Response.json({ error: "Portfolio data is temporarily unavailable. Please try again." }, { status: 502 });
