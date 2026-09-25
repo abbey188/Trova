@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { HelpButton, ProfileAvatarButton } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, GradePill, Icon, NUM, Pill } from "@/components/trova/kit";
-import { signalMeta } from "@/components/trova/signal-line";
+import { signalMeta, signalWhy } from "@/components/trova/signal-line";
 import { swapFromHolding, toOption } from "@/components/trova/trade-sheet";
 import { TradeTrigger } from "@/components/trova/trade-trigger";
 import { useWalletAddress } from "@/components/trova/wallet";
@@ -58,22 +58,6 @@ function title(s: Signal): ReactNode {
     case "ownership-change": return <>{sym} is now {s.to}</>;
     case "advisory": return s.to === "none" ? <>{sym} warning lifted</> : <>{sym} <span style={RED}>warning: {s.to}</span></>;
     case "new-variant": return <>{sym} is newly tokenized</>;
-    default: return s.message;
-  }
-}
-
-/** Why the change counts, in one or two sentences. Factual, never predictive. */
-function why(s: Signal): string {
-  const held = "The change held for three daily snapshots before we called it.";
-  switch (s.kind) {
-    case "routability-change": {
-      const reason = s.message.split(" — ").slice(1).join(" — ").trim();
-      return s.to === "not tradable" ? `${reason ? reason.replace(/\.?$/, ". ") : ""}${held}` : `A buyer can get in and out through Trova again. ${held}`;
-    }
-    case "grade-change": return `${held.replace(".", ",")} so one quiet afternoon could not do this.`;
-    case "tier-change": return "Tier is a plain label for how deep the market is — it never moves the rating by itself.";
-    case "exit-change": return `How easily it can be bought and sold. ${held}`;
-    case "new-variant": return "First seen in a daily snapshot. We rate a token the day it appears, so a new one never sits unscored.";
     default: return s.message;
   }
 }
@@ -186,7 +170,7 @@ export function UpdatesScreen() {
             <span style={{ fontSize: 14, fontWeight: 700 }}>{title(s)}</span>
             {tag(s)}
           </div>
-          <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>{why(s)}</span>
+          <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>{signalWhy(s)}</span>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5 }}>
             {canMove && (
               <TradeTrigger label={`Move to ${better!.symbol}`} variant="inline" assetName={h!.asset.name} options={[toOption(better!)]} defaultMint={better!.mint}

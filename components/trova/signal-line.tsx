@@ -46,3 +46,19 @@ export function signalMeta(s: Signal): string {
 
 /** Change events only — portfolio-level notes (concentration, speculative share) are not activity. */
 export const isChange = (s: Signal) => s.detectedAt != null && !!s.symbol;
+
+/** Why the change counts, in one or two sentences. Factual, never predictive. */
+export function signalWhy(s: Signal): string {
+  const held = "The change held for three daily snapshots before we called it.";
+  switch (s.kind) {
+    case "routability-change": {
+      const reason = s.message.split(" — ").slice(1).join(" — ").trim();
+      return s.to === "not tradable" ? `${reason ? reason.replace(/\.?$/, ". ") : ""}${held}` : `A buyer can get in and out through Trova again. ${held}`;
+    }
+    case "grade-change": return `${held.replace(".", ",")} so one quiet afternoon could not do this.`;
+    case "tier-change": return "Tier is a plain label for how deep the market is — it never moves the rating by itself.";
+    case "exit-change": return `How easily it can be bought and sold. ${held}`;
+    case "new-variant": return "First seen in a daily snapshot. We rate a token the day it appears, so a new one never sits unscored.";
+    default: return s.message;
+  }
+}

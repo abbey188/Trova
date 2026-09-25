@@ -3,6 +3,7 @@
 // The design canvas's components, drawn exactly as the boards draw them. Every screen composes these,
 // so a pill, a ring or a card looks the same everywhere — the canvas is the spec.
 
+import Link from "next/link";
 import { useState, type CSSProperties, type ReactNode } from "react";
 
 import { brandFor, initialsFor } from "@/lib/brand";
@@ -102,6 +103,16 @@ export function Pill({ children, tone = "neutral" }: { children: ReactNode; tone
   return <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "2px 7px", fontSize: 10, fontWeight: 700, color: c[0], background: c[1], whiteSpace: "nowrap" }}>{children}</span>;
 }
 
+/** "Why 87 ›" — the way into a rating, as a button tinted by its grade: A/B green, C amber, D red. */
+export function WhyButton({ href, grade, score, onClick }: { href: string; grade: Rating; score: number | null; onClick?: () => void }) {
+  const tone = grade === "A" || grade === "B" ? { fg: "var(--grade-a)", bg: "var(--grade-a-bg)" } : grade === "C" ? { fg: "var(--grade-c)", bg: "var(--grade-c-bg)" } : grade === "D" ? { fg: "var(--danger)", bg: "var(--danger-bg)" } : { fg: "var(--ink-soft)", bg: "var(--track)" };
+  return (
+    <Link href={href} onClick={onClick} style={{ display: "inline-flex", alignItems: "center", gap: 4, height: 30, padding: "0 8px 0 11px", borderRadius: 9, fontSize: 12, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap", color: tone.fg, background: tone.bg }}>
+      Why {score ?? "NR"}{Icon.chevronRight(14, tone.fg)}
+    </Link>
+  );
+}
+
 // ---------------------------------------------------------------------------- charts
 
 /** A row sparkline in the board's style: 1.6px stroke, green up / red down, faded when not tradable. */
@@ -112,8 +123,8 @@ export function Spark({ values, width = 110, height = 30, muted }: { values?: nu
   const max = Math.max(...v);
   const span = max - min || 1;
   const pts = v.map((y, i) => `${((i / (v.length - 1)) * width).toFixed(1)},${(height - 1 - ((y - min) / span) * (height - 2)).toFixed(1)}`).join(" ");
-  // Red means one thing — you can't get out — so a falling price is drawn neutral, never red.
-  const stroke = muted ? "var(--ink-faint)" : v[v.length - 1] >= v[0] ? "var(--grade-a)" : "var(--ink-soft)";
+  // Up is green, down is red.
+  const stroke = muted ? "var(--ink-faint)" : v[v.length - 1] >= v[0] ? "var(--grade-a)" : "var(--danger)";
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" style={{ display: "block", opacity: muted ? 0.4 : 1, flexShrink: 0 }}>
       <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinejoin="round" />

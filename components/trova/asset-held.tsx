@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { CompanyLogo, DISPLAY, GradePill, Icon, NUM, PillarBar, ScoreRing } from "@/components/trova/kit";
+import { CompanyLogo, DISPLAY, GradePill, Icon, NUM, PillarBar, ScoreRing, WhyButton } from "@/components/trova/kit";
 import { toOption, type SwapFrom } from "@/components/trova/trade-sheet";
 import { TradeTrigger } from "@/components/trova/trade-trigger";
 import { useWalletAddress } from "@/components/trova/wallet";
@@ -75,7 +75,7 @@ export function HeldCard({ detail, held, top, swapFrom }: {
             <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{address ? `Move from ${v.symbol} to ${top.symbol} with one signature.` : "Connect your wallet to move it — one signature."}</span>
           )}
           <span style={{ flexGrow: 1 }} />
-          <Link href={whyHref(detail.asset.assetId, v.mint)} style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--ink-soft)", whiteSpace: "nowrap" }}>Why {s.score ?? "NR"}? →</Link>
+          <WhyButton href={whyHref(detail.asset.assetId, v.mint)} grade={s.grade} score={s.score} />
         </div>
       </div>
     </section>
@@ -187,7 +187,7 @@ function CompareModal({ detail, all, heldMint, onClose }: { detail: AssetDetail;
             <span />
             {all.map((v) => (
               <div key={v.mint} style={{ padding: "12px", borderTop: "1px solid var(--track)", background: v.mint === bestMint ? "var(--good-soft)" : undefined, borderRadius: "0 0 14px 14px" }}>
-                <Link href={whyHref(detail.asset.assetId, v.mint)} onClick={onClose} style={{ fontSize: 12, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>Why {v.score.score ?? "NR"}? →</Link>
+                <WhyButton href={whyHref(detail.asset.assetId, v.mint)} grade={v.score.grade} score={v.score.score} onClick={onClose} />
               </div>
             ))}
           </div>

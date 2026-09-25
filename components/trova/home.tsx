@@ -147,7 +147,7 @@ export function HomeScreen({ address }: { address: string }) {
       <div style={{ ...NUM, fontSize: compact ? 34 : 30, fontWeight: 700, letterSpacing: compact ? -1.1 : -0.9, marginTop: compact ? 7 : 8 }}>{usd(total)}</div>
       <div style={{ display: "flex", alignItems: compact ? "stretch" : "flex-end", flexDirection: compact ? "column" : "row", gap: compact ? 12 : 10, marginTop: 6 }}>
         {change != null && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: change >= 0 ? "var(--grade-a)" : "var(--ink-soft)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", color: change >= 0 ? "var(--grade-a)" : "var(--danger)" }}>
             {change >= 0 ? Icon.up() : Icon.down()}
             {usd(Math.abs(change))}{changePct != null ? ` · ${Math.abs(changePct).toFixed(1)}%` : ""} · today&apos;s holdings, {range}
           </span>
@@ -301,7 +301,7 @@ function ValueLine({ points, width, height, fluid }: { points: number[]; width: 
   const up = points[points.length - 1] >= points[0];
   return (
     <svg width={fluid ? "100%" : width} height={height} viewBox={`0 0 ${vbW} ${vbH}`} preserveAspectRatio="none" style={{ display: "block" }} aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={up ? "var(--grade-a)" : "var(--ink-soft)"} strokeWidth="1.8" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <polyline points={pts} fill="none" stroke={up ? "var(--grade-a)" : "var(--danger)"} strokeWidth="1.8" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }

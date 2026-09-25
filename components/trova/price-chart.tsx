@@ -71,8 +71,8 @@ export function PriceChart({ token, reference, height = 248, labels = true, toke
   const y = (v: number) => pad + (1 - (v - min) / span) * (H - pad * 2 - 4);
   const line = (ps: Pt[]) => ps.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const last = token[token.length - 1];
-  // Up is green; down is drawn neutral — red is kept for "you can't get out".
-  const stroke = last.v >= token[0].v ? "var(--grade-a)" : "var(--ink-soft)";
+  // Up is green, down is red.
+  const stroke = last.v >= token[0].v ? "var(--grade-a)" : "var(--danger)";
   const intraday = t1 - t0 < 2 * 86_400;
   const fmtT = (t: number) => new Date(t * 1000).toLocaleString("en-GB", intraday ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" });
   const fmtFull = (t: number) => new Date(t * 1000).toLocaleString("en-GB", intraday ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", year: "numeric" });

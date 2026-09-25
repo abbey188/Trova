@@ -10,9 +10,9 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { CompareButton, HeldCard } from "@/components/trova/asset-held";
 import { HelpButton } from "@/components/trova/frame";
-import { CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing } from "@/components/trova/kit";
+import { CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing, WhyButton } from "@/components/trova/kit";
 import { PriceChart, RangeTabs, useRangeSeries, type RangeKey } from "@/components/trova/price-chart";
-import { isChange, signalMeta, signalTitle } from "@/components/trova/signal-line";
+import { isChange, signalMeta, signalTitle, signalWhy } from "@/components/trova/signal-line";
 import { SellTrigger, TradeTrigger } from "@/components/trova/trade-trigger";
 import { swapFromHolding, toOption, type SwapFrom, type TokenOption } from "@/components/trova/trade-sheet";
 import { useWalletAddress } from "@/components/trova/wallet";
@@ -156,7 +156,7 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>On-chain{top ? ` · ${top.symbol}` : ""}</span>
         <span style={{ ...NUM, fontSize: 30, fontWeight: 700, letterSpacing: -0.9 }}>{price != null ? usd(price) : "—"}</span>
         {change != null && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: change >= 0 ? "var(--grade-a)" : "var(--ink-soft)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: change >= 0 ? "var(--grade-a)" : "var(--danger)" }}>
             {change >= 0 ? Icon.up() : Icon.down()}{usd(Math.abs(change))} · {Math.abs(changePct ?? 0).toFixed(2)}% <span style={{ color: "var(--ink-faint)", fontWeight: 500 }}>· {rangeLabel}</span>
           </span>
         )}
@@ -252,7 +252,7 @@ function MiniLine({ values }: { values: number[] }) {
   const up = v[v.length - 1] >= v[0];
   return (
     <svg width="100%" height="34" viewBox="0 0 100 34" preserveAspectRatio="none" style={{ display: "block", marginTop: 8 }} aria-hidden="true">
-      <polyline points={pts} fill="none" stroke={up ? "var(--grade-a)" : "var(--ink-soft)"} strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+      <polyline points={pts} fill="none" stroke={up ? "var(--grade-a)" : "var(--danger)"} strokeWidth="1.8" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -280,7 +280,7 @@ function StatGrid({ detail, top, compact }: { detail: AssetDetail; top?: AssetVa
   const ranges = detail.priceHistory?.ranges;
   const price = top?.priceUsd ?? null;
   const card = (children: ReactNode) => <Panel style={{ padding: "14px 16px", borderRadius: 14, minWidth: compact ? 152 : 0, flexShrink: 0 }}>{children}</Panel>;
-  const trend = (text: string | null, up: boolean) => text && <span style={{ display: "block", fontSize: 10, color: up ? "var(--grade-a)" : "var(--ink-soft)", fontWeight: 600, marginTop: 5 }}>{text}</span>;
+  const trend = (text: string | null, up: boolean) => text && <span style={{ display: "block", fontSize: 10, color: up ? "var(--grade-a)" : "var(--danger)", fontWeight: 600, marginTop: 5 }}>{text}</span>;
   const marker = (lo: number, hi: number) => (price == null || hi <= lo ? 50 : Math.max(0, Math.min(100, ((price - lo) / (hi - lo)) * 100)));
   return (
     <div style={compact ? { display: "flex", gap: 9, overflowX: "auto", paddingBottom: 2 } : { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 }}>
@@ -330,7 +330,6 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
     ...(asset.cusip ? [["CUSIP", asset.cusip] as [string, ReactNode]] : []),
     ["Tokens on Solana", n],
     ...(detail.tokenizedSupply != null ? [["Tokenized supply", Math.round(detail.tokenizedSupply).toLocaleString("en-US")] as [string, ReactNode]] : []),
-    ...(reference?.marketOpen != null && reference.basis === "share" ? [["Market", <span key="m" style={{ color: reference.marketOpen ? "var(--grade-a)" : "var(--ink-soft)" }}>{reference.marketOpen ? "US market open" : "US market closed"}</span>] as [string, ReactNode]] : []),
   ];
   return (
     <Panel style={{ padding: "16px 20px" }}>
@@ -405,7 +404,7 @@ function TopTokenCard({ detail, top, only, compact, holds, alternative }: { deta
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, color: "var(--ink-faint)" }}>Holders</span><span style={{ ...NUM, fontSize: 14, fontWeight: 700 }}>{count(top.holders)}</span></div>
         )}
         <span style={{ flexGrow: 1 }} />
-        <Link href={why} style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>Why {s.score ?? "NR"}? →</Link>
+        <WhyButton href={why} grade={s.grade} score={s.score} />
       </div>
     </Panel>
   );
@@ -500,19 +499,26 @@ function ExitCard({ mint }: { mint: string }) {
 function Changes({ detail }: { detail: AssetDetail }) {
   const list = detail.signals.filter(isChange).slice(0, 4);
   if (!list.length) return null;
+  const { asset } = detail;
   return (
     <Panel style={{ padding: "16px 18px" }}>
       <div style={{ display: "flex", alignItems: "center" }}>
-        <Label>What changed</Label>
+        <Label>Updates</Label>
         <span style={{ flexGrow: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{detail.historyDays} days watched</span>
+        <Link href="/updates" style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>See all →</Link>
       </div>
-      {list.map((s, i) => (
-        <div key={i} style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 12 }}>
-          <span style={{ fontSize: 12, lineHeight: 1.4 }}>{signalTitle(s)}</span>
-          <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{signalMeta(s)}</span>
-        </div>
-      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+        {list.map((s, i) => (
+          <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", border: `1px solid ${s.kind === "routability-change" && s.to === "not tradable" ? "var(--danger-line)" : "var(--hairline)"}`, borderRadius: 14, padding: "12px 14px" }}>
+            <CompanyLogo src={asset.logoUrl} name={asset.name} id={asset.assetId} size={34} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{signalTitle(s)}</span>
+              <span style={{ fontSize: 11, lineHeight: 1.45, color: "var(--ink-soft)" }}>{signalWhy(s)}</span>
+              <span style={{ fontSize: 10, color: "var(--ink-faint)" }}>{signalMeta(s).split(" · ")[0]}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </Panel>
   );
 }
@@ -738,7 +744,7 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options, ctx }: { de
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: top && !priv ? 2 : 14, flexWrap: "wrap" }}>
           <span style={{ ...NUM, fontSize: 33, fontWeight: 700, letterSpacing: -1 }}>{top ? usd(top.priceUsd) : "—"}</span>
           {c.change != null && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 13, fontWeight: 700, color: c.change >= 0 ? "var(--grade-a)" : "var(--ink-soft)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 13, fontWeight: 700, color: c.change >= 0 ? "var(--grade-a)" : "var(--danger)" }}>
               {c.change >= 0 ? Icon.up() : Icon.down()}{Math.abs(c.changePct ?? 0).toFixed(2)}%
             </span>
           )}
