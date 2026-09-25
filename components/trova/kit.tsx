@@ -19,7 +19,7 @@ export function CompanyLogo({ src, name, id, size = 38 }: { src?: string | null;
   const shape: CSSProperties = { width: size, height: size, borderRadius: 999, flexShrink: 0 };
   if (src && !failed) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={size} height={size} onError={() => setFailed(true)} style={{ ...shape, objectFit: "cover", background: "var(--surface)", boxShadow: "inset 0 0 0 1px var(--hairline)", outline: "1px solid var(--hairline)", outlineOffset: -1 }} />;
+    return <img src={src} alt="" width={size} height={size} onError={() => setFailed(true)} style={{ ...shape, objectFit: "cover", background: "#fff", boxShadow: "0 0 0 1px rgba(20,22,26,0.06)" }} />;
   }
   return (
     <span aria-hidden="true" style={{ ...shape, ...DISPLAY, display: "flex", alignItems: "center", justifyContent: "center", background: brandFor(id ?? name), color: "#fff", fontSize: Math.round(size * 0.38), fontWeight: 700 }}>

@@ -6,7 +6,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { HelpButton, ProfileAvatarButton } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, GradePill, Icon, NUM, Pill } from "@/components/trova/kit";
@@ -80,6 +81,12 @@ function why(s: Signal): string {
 export function UpdatesScreen() {
   const address = useWalletAddress();
   const [filter, setFilter] = useState<Filter>("all");
+  const router = useRouter();
+  // Home's "See all" lands here on Your holdings (?f=holdings).
+  useEffect(() => {
+    const f = new URLSearchParams(window.location.search).get("f");
+    if (f === "holdings" || f === "watchlist" || f === "ownership" || f === "exit") setFilter(f);
+  }, []);
   const [open, setOpen] = useState<Set<string>>(new Set());
 
   const universe = useQuery({ queryKey: ["signals", 30], queryFn: () => api<{ signals: Signal[]; stats?: MonitoringStats; historyDays: number }>("/api/signals?days=30"), staleTime: 300_000 });
@@ -154,6 +161,7 @@ export function UpdatesScreen() {
     : `Nothing has changed here in the last ${universe.data?.historyDays ?? 30} days of daily checks.`;
 
   const holdingOf = (s: Signal): Holding | undefined => (s.mint ? held.get(s.mint) : undefined);
+  const hrefOf = (s: Signal) => `/asset/${encodeURIComponent(s.assetId ?? "")}${s.mint && held.has(s.mint) ? `?held=${s.mint}` : ""}`;
   const nameOf = (s: Signal) => companies.get(s.assetId ?? "")?.name ?? s.symbol ?? "";
   const logo = (s: Signal, size: number) => <CompanyLogo src={companies.get(s.assetId ?? "")?.logoUrl} name={nameOf(s)} id={s.assetId} size={size} />;
   const toggle = (k: string) => setOpen((o) => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -171,7 +179,7 @@ export function UpdatesScreen() {
     const canMove = !!address && !!h && !!better && h.rawAmount != null && h.decimals != null;
     const alarm = !!h && lostExit(s);
     return (
-      <article style={{ background: "var(--surface)", border: `1px solid ${alarm ? "var(--danger-line)" : "var(--hairline)"}`, borderRadius: 16, padding: "17px 19px", display: "flex", gap: 15 }}>
+      <article onClick={() => s.assetId && router.push(hrefOf(s))} className="hover:bg-[var(--canvas)]" style={{ cursor: s.assetId ? "pointer" : "default",  background: "var(--surface)", border: `1px solid ${alarm ? "var(--danger-line)" : "var(--hairline)"}`, borderRadius: 16, padding: "17px 19px", display: "flex", gap: 15 }}>
         {logo(s, 42)}
         <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0, flexGrow: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
@@ -184,7 +192,7 @@ export function UpdatesScreen() {
               <TradeTrigger label={`Move to ${better!.symbol}`} variant="inline" assetName={h!.asset.name} options={[toOption(better!)]} defaultMint={better!.mint}
                 from={swapFromHolding(h!)} assetId={h!.asset.assetId} logoUrl={h!.asset.logoUrl} />
             )}
-            {s.assetId && <Link href={`/asset/${encodeURIComponent(s.assetId)}`} style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)", textDecoration: "none" }}>Open {nameOf(s)}</Link>}
+            {s.assetId && <Link href={hrefOf(s)} onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4, height: 32, padding: "0 12px", borderRadius: 9, fontSize: 12, fontWeight: 700, color: "var(--grade-a)", background: "var(--grade-a-bg)", textDecoration: "none" }}>Open {nameOf(s)} {Icon.chevronRight(12)}</Link>}
             <span style={{ flexGrow: 1 }} />
             <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{signalMeta(s).split(" · ")[0]}</span>
           </div>
@@ -196,7 +204,7 @@ export function UpdatesScreen() {
   function Row({ s }: { s: Signal }) {
     const tagged = tag(s);
     return (
-      <Link href={s.assetId ? `/asset/${encodeURIComponent(s.assetId)}` : "#"} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", borderRadius: 15, padding: "13px 15px", textDecoration: "none", color: "inherit", border: `1px solid ${holdingOf(s) && lostExit(s) ? "var(--danger-line)" : "transparent"}` }}>
+      <Link href={s.assetId ? hrefOf(s) : "#"} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", borderRadius: 15, padding: "13px 15px", textDecoration: "none", color: "inherit", border: `1px solid ${holdingOf(s) && lostExit(s) ? "var(--danger-line)" : "transparent"}` }}>
         {logo(s, 38)}
         <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 700 }}>{title(s)}</span>

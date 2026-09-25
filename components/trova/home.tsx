@@ -8,12 +8,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Avatar, HelpButton, Sheet } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, gradeOf, GradePill, Icon, Label, NUM, Panel, Pill, ScoreRing, Spark } from "@/components/trova/kit";
 import { ProfileContent } from "@/components/trova/profile";
 import { isChange, signalMeta, signalTitle } from "@/components/trova/signal-line";
+import { NamePrompt } from "@/components/trova/name-prompt";
 import { SearchBox } from "@/components/trova/search";
 import { TradeTrigger } from "@/components/trova/trade-trigger";
 import { swapFromHolding, toOption } from "@/components/trova/trade-sheet";
@@ -31,6 +33,9 @@ function flagged(h: Holding) {
 }
 
 export const optionOf = toOption;
+
+/** A holding opens its company's page in the context of the token you hold. */
+const heldHref = (h: Holding) => `/asset/${encodeURIComponent(h.asset.assetId)}?held=${h.variant.mint}`;
 
 function units(n: number) {
   return n >= 100 ? Math.round(n).toLocaleString("en-US") : n.toLocaleString("en-US", { maximumFractionDigits: 3 });
@@ -74,6 +79,7 @@ export function HomeScreen({ address }: { address: string }) {
 
   const header = (
     <>
+      {mine && me.isSuccess && !me.data?.nickname && <NamePrompt address={address} />}
       {/* desktop header */}
       <header className="hidden lg:flex" style={{ alignItems: "center", gap: 16, padding: "17px 26px", background: "var(--surface)", borderBottom: "1px solid var(--hairline)", position: "sticky", top: 0, zIndex: 30 }}>
         <button type="button" onClick={() => setProfile(true)} aria-label="Profile" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", borderRadius: 999 }}>
@@ -158,7 +164,7 @@ export function HomeScreen({ address }: { address: string }) {
     <Panel style={{ padding: compact ? "15px 16px" : "14px 16px", display: "flex", alignItems: "center", gap: compact ? 12 : 13 }}>
       <ScoreRing score={ringScore} grade={ringScore == null ? "NR" : gradeOf(ringScore)} size={compact ? 66 : 80} />
       <div style={{ display: "flex", flexDirection: "column", gap: compact ? 7 : 8, minWidth: 0, flexGrow: 1 }}>
-        <Label>Trova Score</Label>
+        <Label>Trova Portfolio Score</Label>
         <MiniBar label="Ownership" value={p.scores.ownership} />
         <MiniBar label="Exit" value={p.scores.exit} />
       </div>
@@ -268,7 +274,7 @@ export function HomeScreen({ address }: { address: string }) {
 
 function DemoBadge({ compact }: { compact?: boolean }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: compact ? "2px 8px" : "4px 11px", fontSize: compact ? 10 : 11, fontWeight: 700, color: "var(--grade-c)", background: "var(--grade-c-bg)", alignSelf: "flex-start" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: compact ? "2px 8px" : "4px 11px", fontSize: compact ? 10 : 11, fontWeight: 700, color: "var(--grade-c)", background: "var(--grade-c-bg)", alignSelf: compact ? "flex-start" : "center", whiteSpace: "nowrap" }}>
       {compact ? "Demo · live prices" : "Demo · example holdings, live prices and ratings"}
     </span>
   );
@@ -301,6 +307,7 @@ function ValueLine({ points, width, height, fluid }: { points: number[]; width: 
 }
 
 function HoldingsTable({ p, canTrade }: { p: PortfolioSummary; canTrade: boolean }) {
+  const router = useRouter();
   const th = { fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" as const, color: "var(--ink-faint)", fontWeight: 700 };
   return (
     <Panel style={{ flexGrow: 1, minWidth: 0, overflow: "hidden" }}>
@@ -330,13 +337,13 @@ function HoldingsTable({ p, canTrade }: { p: PortfolioSummary; canTrade: boolean
               const better = h.betterVariant;
               const canMove = canTrade && better && better.score.routable && h.rawAmount && h.rawAmount !== "0" && h.decimals != null;
               return (
-                <tr key={h.variant.mint} style={{ borderTop: "1px solid var(--track)" }}>
+                <tr key={h.variant.mint} onClick={() => router.push(heldHref(h))} className="hover:bg-[var(--canvas)]" style={{ borderTop: "1px solid var(--track)", cursor: "pointer" }}>
                   <td style={{ padding: "11px 20px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                       <CompanyLogo src={h.asset.logoUrl} name={h.asset.name} id={h.asset.assetId} size={32} />
                       <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <Link href={`/asset/${encodeURIComponent(h.asset.assetId)}`} style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", textDecoration: "none" }}>{h.asset.name}</Link>
+                          <Link href={heldHref(h)} style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", textDecoration: "none" }}>{h.asset.name}</Link>
                           {spec && <Pill tone="warn">Speculative</Pill>}
                           {risk && <Pill tone="danger">At risk</Pill>}
                           {h.valuation.stale && <Pill tone="warn">Priced at market</Pill>}
@@ -388,7 +395,7 @@ function HoldingCard({ h }: { h: Holding }) {
   const spec = h.variant.score.instrument.speculative;
   const risk = flagged(h) && !spec;
   return (
-    <Link href={`/asset/${encodeURIComponent(h.asset.assetId)}`} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", borderRadius: 15, padding: "13px 15px", textDecoration: "none", color: "inherit" }}>
+    <Link href={heldHref(h)} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", borderRadius: 15, padding: "13px 15px", textDecoration: "none", color: "inherit" }}>
       <CompanyLogo src={h.asset.logoUrl} name={h.asset.name} id={h.asset.assetId} size={38} />
       <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600 }}>{h.asset.name}</span>
@@ -466,7 +473,7 @@ function Activity({ signals, holdings }: { signals: Signal[]; holdings: Holding[
       <div style={{ display: "flex", alignItems: "center" }}>
         <Label>Portfolio activity</Label>
         <span style={{ flexGrow: 1 }} />
-        <Link href="/updates" style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>See all →</Link>
+        <Link href="/updates?f=holdings" style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>See all →</Link>
       </div>
       {top.length === 0 ? (
         <span style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 12 }}>Nothing has changed for your holdings.</span>
@@ -517,7 +524,7 @@ function AttentionContent({ rows, total, canTrade, onClose }: { rows: Holding[];
                 <TradeTrigger label={`Move to ${better.symbol} · ${better.score.grade} ${better.score.score ?? ""}`} variant="inline" assetName={h.asset.name} assetId={h.asset.assetId} logoUrl={h.asset.logoUrl} options={[optionOf(better)]} defaultMint={better.mint}
                   from={swapFromHolding(h)} />
               )}
-              <Link href={`/asset/${encodeURIComponent(h.asset.assetId)}`} onClick={onClose} style={{ display: "inline-flex", alignItems: "center", height: 32, padding: "0 12px", borderRadius: 9, border: "1px solid var(--hairline)", background: "var(--surface)", fontSize: 12, fontWeight: 600, color: "var(--ink)", textDecoration: "none" }}>
+              <Link href={heldHref(h)} onClick={onClose} style={{ display: "inline-flex", alignItems: "center", height: 32, padding: "0 12px", borderRadius: 9, border: "1px solid var(--hairline)", background: "var(--surface)", fontSize: 12, fontWeight: 600, color: "var(--ink)", textDecoration: "none" }}>
                 Open {h.asset.name}
               </Link>
             </div>

@@ -19,7 +19,7 @@ const FAQ: { q: string; a: string }[] = [
 export function HelpContent({ onClose }: { onClose?: () => void }) {
   const [open, setOpen] = useState(0);
   return (
-    <div style={{ padding: "22px 22px 28px", display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ padding: "26px clamp(18px, 3vw, 34px) 30px", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ ...DISPLAY, fontSize: 22, fontWeight: 700, letterSpacing: -0.4 }}>How ratings work</span>
@@ -30,7 +30,10 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
+      {/* Wide: the method on the left, the questions on the right. Narrow: one column. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", gap: 24, alignItems: "start" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
         <section style={{ background: "var(--canvas)", borderRadius: 16, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ ...DISPLAY, fontSize: 17, fontWeight: 700 }}>Ownership</span>
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>Can you swap the token for the real share, and what does holding it actually entitle you to?</p>
@@ -74,6 +77,7 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
         </div>
       </section>
 
+      </div>
       <div style={{ display: "flex", flexDirection: "column" }}>
         <span style={{ fontSize: 11, color: "var(--ink-faint)", fontWeight: 600, marginBottom: 6 }}>Common questions</span>
         {FAQ.map((f, i) => (
@@ -85,6 +89,7 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
             {open === i && <p style={{ margin: "0 0 14px", fontSize: 12, lineHeight: 1.6, color: "var(--ink-soft)" }}>{f.a}</p>}
           </div>
         ))}
+      </div>
       </div>
       <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Rescored every day. Every rating updates as more information becomes public.</span>
     </div>

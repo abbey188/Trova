@@ -5,7 +5,7 @@ export function CompanyLogoStatic({ src, name, id, size = 38 }: { src?: string |
   const shape = { width: size, height: size, borderRadius: 999, flexShrink: 0 } as const;
   if (src) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={size} height={size} style={{ ...shape, objectFit: "cover", background: "var(--surface)", boxShadow: "inset 0 0 0 1px var(--hairline)", outline: "1px solid var(--hairline)", outlineOffset: -1, display: "block" }} />;
+    return <img src={src} alt="" width={size} height={size} style={{ ...shape, objectFit: "cover", background: "#fff", boxShadow: "0 0 0 1px rgba(20,22,26,0.06)", display: "block" }} />;
   }
   return (
     <span aria-hidden="true" style={{ ...shape, fontFamily: "var(--font-display), system-ui", display: "flex", alignItems: "center", justifyContent: "center", background: brandFor(id ?? name), color: "#fff", fontSize: Math.round(size * 0.38), fontWeight: 700 }}>

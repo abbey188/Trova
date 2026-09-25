@@ -6,11 +6,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { HelpButton, ProfileAvatarButton } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, GradePill, Icon, NUM, Pill, Spark } from "@/components/trova/kit";
 import { SearchBox } from "@/components/trova/search";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/client";
 import { usd } from "@/lib/format";
 import type { MarketRow, MarketsOverview } from "@/lib/types";
@@ -44,6 +46,7 @@ export function MarketsScreen() {
   const [tab, setTab] = useState<Tab>("stocks");
   const [sort, setSort] = useState<Sort>("rating");
   const [shown, setShown] = useState(PAGE);
+  const [days, setDays] = useState<30 | 90>(90);
 
   const markets = useQuery({ queryKey: ["markets"], queryFn: () => api<MarketsOverview>("/api/markets"), staleTime: 60_000 });
   const watchlist = useQuery({ queryKey: ["watchlist"], queryFn: () => api<{ items: MarketRow[] }>("/api/watchlist", { device: true }), retry: false, staleTime: 60_000 });
@@ -78,11 +81,15 @@ export function MarketsScreen() {
     enabled: tickers.length > 0,
     staleTime: 3_600_000,
   });
-  const sparkOf = (r: MarketRow) => spark.data?.[r.symbol.toUpperCase()] ?? null;
+  // The series carries weekends as repeated closes; ~21 trading days a month.
+  const sparkOf = (r: MarketRow) => {
+    const v = spark.data?.[r.symbol.toUpperCase()] ?? null;
+    return v && days === 30 ? v.slice(-30) : v;
+  };
 
   const watchCount = watchlist.data?.items.length ?? null;
   const pick = (t: Tab) => { setTab(t); setShown(PAGE); };
-  const cycleSort = () => setSort((s) => SORTS[(SORTS.findIndex((x) => x.key === s) + 1) % SORTS.length].key);
+  const router = useRouter();
   const sortLabel = SORTS.find((s) => s.key === sort)!.label;
 
   const loading = tab === "watchlist" ? watchlist.isPending : markets.isPending;
@@ -116,23 +123,35 @@ export function MarketsScreen() {
           <span style={{ width: 6 }} />
           {TABS.map((t) => <button key={t.key} type="button" onClick={() => pick(t.key)} aria-pressed={tab === t.key} style={chip(tab === t.key, false)}>{t.label}</button>)}
           <span style={{ flexGrow: 1 }} />
-          <button type="button" onClick={cycleSort} style={{ ...chip(false, false), fontSize: 12, padding: "9px 15px" }}>Sort: {sortLabel} {Icon.chevronDown(13)}</button>
+          <SortMenu sort={sort} setSort={setSort} trigger={<button type="button" style={{ ...chip(false, false), fontSize: 12, padding: "9px 15px" }}>Sort: {sortLabel} {Icon.chevronDown(13)}</button>} />
         </div>
         {tab === "private" && privateNote}
         <section style={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 16, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup><col style={{ width: "34%" }} /><col style={{ width: "15%" }} /><col style={{ width: "21%" }} /><col style={{ width: "15%" }} /><col style={{ width: "15%" }} /></colgroup>
             <thead>
               <tr>
-                {[["Company", "left", "13px 20px 10px"], ["Price", "right", "13px 8px 10px"], ["90 days", "left", "13px 8px 10px 22px"], ["Liquidity", "right", "13px 8px 10px"], ["Rating", "right", "13px 20px 10px"]].map(([h, a, pad]) => (
-                  <th key={h} scope="col" style={{ textAlign: a as "left" | "right", fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700, padding: pad }}>{h}</th>
-                ))}
+                <th scope="col" style={TH("left", "13px 20px 10px")}>Company</th>
+                <th scope="col" style={TH("right", "13px 16px 10px")}>Price</th>
+                <th scope="col" style={TH("center", "8px 8px 6px")}>
+                  <span role="group" aria-label="Chart range" style={{ display: "inline-flex", gap: 2, background: "var(--canvas)", borderRadius: 8, padding: 2 }}>
+                    {([30, 90] as const).map((d) => (
+                      <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
+                        style={{ border: "none", borderRadius: 6, padding: "4px 9px", fontSize: 10, fontWeight: 700, letterSpacing: 0.5, cursor: "pointer", fontFamily: "inherit", background: days === d ? "var(--surface)" : "transparent", color: days === d ? "var(--ink)" : "var(--ink-faint)", boxShadow: days === d ? "0 1px 2px rgba(20,22,26,0.08)" : "none" }}>
+                        {d} DAYS
+                      </button>
+                    ))}
+                  </span>
+                </th>
+                <th scope="col" style={TH("right", "13px 16px 10px")}>Liquidity</th>
+                <th scope="col" style={TH("right", "13px 20px 10px")}>Rating</th>
               </tr>
             </thead>
             <tbody>
               {loading ? [0, 1, 2, 3, 4, 5].map((i) => (
                 <tr key={i} style={{ borderTop: "1px solid var(--track)" }}><td colSpan={5} style={{ padding: "11px 20px" }}><div className="animate-pulse" style={{ height: 34, borderRadius: 10, background: "var(--track)" }} /></td></tr>
               )) : rows.map((r) => (
-                <tr key={r.assetId} className="hover:bg-[var(--canvas)]" style={{ borderTop: "1px solid var(--track)" }}>
+                <tr key={r.assetId} onClick={() => router.push(`/asset/${encodeURIComponent(r.assetId)}`)} className="hover:bg-[var(--canvas)]" style={{ borderTop: "1px solid var(--track)", cursor: "pointer" }}>
                   <td style={{ padding: "11px 20px" }}>
                     <Link href={`/asset/${encodeURIComponent(r.assetId)}`} style={{ display: "flex", alignItems: "center", gap: 11, textDecoration: "none", color: "inherit" }}>
                       <CompanyLogo src={r.logoUrl} name={r.name} id={r.assetId} size={34} />
@@ -146,9 +165,9 @@ export function MarketsScreen() {
                       </div>
                     </Link>
                   </td>
-                  <td style={{ padding: "11px 8px", textAlign: "right" }}><span style={{ ...NUM, fontSize: 13, fontWeight: 600 }}>{usd(r.priceUsd)}</span></td>
-                  <td style={{ padding: "11px 8px 11px 22px" }}><Spark values={sparkOf(r)} width={120} height={30} muted={r.routable === false} /></td>
-                  <td style={{ padding: "11px 8px", textAlign: "right" }}><span style={{ ...NUM, fontSize: 13, fontWeight: 600 }}>{usd(r.liquidityUsd, { compact: true })}</span></td>
+                  <td style={{ padding: "11px 16px", textAlign: "right" }}><span style={{ ...NUM, fontSize: 13, fontWeight: 600 }}>{usd(r.priceUsd)}</span></td>
+                  <td style={{ padding: "11px 8px" }}><div style={{ display: "flex", justifyContent: "center" }}><Spark values={sparkOf(r)} width={130} height={30} muted={r.routable === false} /></div></td>
+                  <td style={{ padding: "11px 16px", textAlign: "right" }}><span style={{ ...NUM, fontSize: 13, fontWeight: 600 }}>{usd(r.liquidityUsd, { compact: true })}</span></td>
                   <td style={{ padding: "11px 20px", textAlign: "right" }}>
                     {r.grade ? <GradePill grade={r.grade} score={r.score} /> : <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Not rated</span>}
                   </td>
@@ -181,9 +200,10 @@ export function MarketsScreen() {
         <div style={{ display: "flex", alignItems: "center", padding: "0 4px 2px" }}>
           <span style={{ fontSize: 11, color: "var(--ink-faint)", fontWeight: 600 }}>Sorted by {sortLabel}</span>
           <span style={{ flexGrow: 1 }} />
-          <button type="button" onClick={cycleSort} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "var(--ink-soft)", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
-            {sortLabel} {Icon.chevronDown(12)}
-          </button>
+          <SortMenu sort={sort} setSort={setSort} trigger={
+            <button type="button" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "var(--ink-soft)", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", textTransform: "capitalize" }}>
+              {sortLabel} {Icon.chevronDown(12)}
+            </button>} />
         </div>
         {tab === "private" && privateNote}
         {loading && [0, 1, 2, 3, 4].map((i) => <div key={i} className="animate-pulse" style={{ height: 64, borderRadius: 15, background: "var(--surface)" }} />)}
@@ -207,6 +227,26 @@ export function MarketsScreen() {
         {all.length > shown && <MoreButton onClick={() => setShown((n) => n + PAGE)} left={all.length - shown} rounded />}
       </main>
     </>
+  );
+}
+
+const TH = (align: "left" | "right" | "center", padding: string) => ({ textAlign: align, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase" as const, color: "var(--ink-faint)", fontWeight: 700, padding });
+
+/** Sort, as a real menu: open it and pick — rating, liquidity or price. */
+function SortMenu({ sort, setSort, trigger }: { sort: Sort; setSort: (s: Sort) => void; trigger: React.ReactElement }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end" style={{ minWidth: 180, background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 12, padding: 6, boxShadow: "0 12px 32px rgba(20,22,26,0.14)" }}>
+        <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as Sort)}>
+          {SORTS.map((o) => (
+            <DropdownMenuRadioItem key={o.key} value={o.key} style={{ fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "9px 10px", textTransform: "capitalize", cursor: "pointer" }}>
+              {o.key === "rating" ? "Rating, best first" : o.key === "liquidity" ? "Liquidity, deepest first" : "Price, highest first"}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

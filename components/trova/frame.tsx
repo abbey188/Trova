@@ -27,7 +27,7 @@ export function useHomeHref(): string {
 const HelpCtx = createContext<() => void>(() => {});
 export const useOpenHelp = () => useContext(HelpCtx);
 
-export function Sheet({ open, onClose, children, label, side = "right" }: { open: boolean; onClose: () => void; children: ReactNode; label: string; side?: "right" | "bottom" }) {
+export function Sheet({ open, onClose, children, label, side = "right", width = 520 }: { open: boolean; onClose: () => void; children: ReactNode; label: string; side?: "right" | "bottom"; width?: number }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -44,7 +44,7 @@ export function Sheet({ open, onClose, children, label, side = "right" }: { open
         style={{
           position: "relative", background: "var(--surface)", overflowY: "auto",
           ...(side === "right"
-            ? { width: "min(520px, 100vw)", height: "100%", borderRadius: "22px 0 0 22px" }
+            ? { width: `min(${width}px, 100vw)`, height: "100%", borderRadius: "22px 0 0 22px" }
             : { width: "min(560px, 100vw)", maxHeight: "92vh", borderRadius: "24px 24px 0 0", paddingBottom: "env(safe-area-inset-bottom, 0px)" }),
         }}
       >
@@ -116,7 +116,7 @@ export function AppFrame({ active, children }: { active: Section; children: Reac
         </nav>
       </div>
 
-      <Sheet open={help} onClose={() => setHelp(false)} label="How ratings work">
+      <Sheet open={help} onClose={() => setHelp(false)} label="How ratings work" width={940}>
         <HelpContent onClose={() => setHelp(false)} />
       </Sheet>
     </HelpCtx.Provider>

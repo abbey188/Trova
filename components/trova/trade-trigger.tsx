@@ -44,7 +44,10 @@ export function TradeTrigger({
       >
         {label}
       </button>
+      {/* Keep the sheet's clicks from reaching a tappable card or row it was opened from. */}
+      <span onClick={(e) => e.stopPropagation()} style={{ display: "contents" }}>
       <TradeSheet open={open} onClose={() => setOpen(false)} assetName={assetName} assetId={assetId} logoUrl={logoUrl} options={options} defaultMint={defaultMint} from={from} />
+      </span>
     </>
   );
 }

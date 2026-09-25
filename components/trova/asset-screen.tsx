@@ -6,8 +6,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
+import { CompareButton, HeldCard } from "@/components/trova/asset-held";
 import { HelpButton } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing } from "@/components/trova/kit";
 import { PriceChart, RangeTabs, useRangeSeries, type RangeKey } from "@/components/trova/price-chart";
@@ -33,6 +34,11 @@ export function AssetScreen({ detail }: { detail: AssetDetail }) {
   const priv = !!privateMark || shown.every((v) => v.score.instrument.speculative);
   const options = shown.map(toOption);
   const swapFrom = useSwapFrom(asset.assetId, top);
+  const held = useHeld(asset.assetId, shown);
+  // The token you hold, when it isn't the soundest one — the page leads with it.
+  const heldWeaker = held && top && held.variant.mint !== top.mint ? held : null;
+  const holdsTop = !!held && !!top && held.variant.mint === top.mint;
+  const ctx: HeldCtx = { held, heldWeaker, holdsTop, swapFrom };
 
   const actions = top ? (
     <>
@@ -50,10 +56,35 @@ export function AssetScreen({ detail }: { detail: AssetDetail }) {
         {actions}
       </header>
 
-      {priv ? <PrivateDesktop detail={detail} top={top} others={others} /> : <ListedDesktop detail={detail} top={top} others={others} />}
-      <AssetMobile detail={detail} top={top} others={others} priv={priv} swapFrom={swapFrom} options={options} />
+      {priv ? <PrivateDesktop detail={detail} top={top} others={others} /> : <ListedDesktop detail={detail} top={top} others={others} ctx={ctx} />}
+      <AssetMobile detail={detail} top={top} others={others} priv={priv} swapFrom={swapFrom} options={options} ctx={ctx} />
     </>
   );
+}
+
+interface HeldCtx {
+  held: { variant: AssetVariantView; valueUsd: number | null; sellLossPct: number | null } | null;
+  heldWeaker: HeldCtx["held"];
+  holdsTop: boolean;
+  swapFrom?: SwapFrom;
+}
+
+/**
+ * Which of this company's tokens you hold: the connected wallet's largest position in it, or — from
+ * a link on Home or Updates — the `?held=<mint>` it names (the demo portfolio has no wallet).
+ */
+function useHeld(assetId: string, shown: AssetVariantView[]): HeldCtx["held"] {
+  const address = useWalletAddress();
+  const [param, setParam] = useState<string | null>(null);
+  useEffect(() => { setParam(new URLSearchParams(window.location.search).get("held")); }, []);
+  const wallet = address ?? (param ? "demo" : null);
+  const p = useQuery({ queryKey: ["portfolio", wallet], queryFn: () => api<PortfolioSummary>(`/api/portfolio?wallet=${wallet}`), enabled: !!wallet, staleTime: 60_000 });
+  const mine = (p.data?.holdings ?? []).filter((h) => h.asset.assetId === assetId && h.valueUsd > 0).sort((a, b) => b.valueUsd - a.valueUsd);
+  const h = (param ? mine.find((x) => x.variant.mint === param) : null) ?? (address ? mine[0] : null);
+  const mint = h?.variant.mint ?? param;
+  const variant = mint ? shown.find((v) => v.mint === mint) : undefined;
+  if (!variant) return null;
+  return { variant, valueUsd: h?.valueUsd ?? null, sellLossPct: h?.sellNow?.status === "ok" ? h.sellNow.lossPct ?? null : null };
 }
 
 /** A position in a weaker token of this company that the connected wallet actually holds. */
@@ -97,22 +128,19 @@ function WatchButton({ assetId, iconOnly }: { assetId: string; iconOnly?: boolea
 
 function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detail: AssetDetail; top?: AssetVariantView; price: number | null; change: number | null; changePct: number | null; rangeLabel: string }) {
   const { asset } = detail;
-  const n = detail.variants.filter((v) => !v.score.hidden).length;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 15, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 15, flexWrap: "wrap", paddingRight: 8 }}>
       <CompanyLogo src={asset.logoUrl} name={asset.name} id={asset.assetId} size={54} />
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
           <span style={{ ...DISPLAY, fontSize: 25, fontWeight: 700, letterSpacing: -0.5 }}>{asset.name}</span>
           {asset.symbol && <span style={{ display: "inline-flex", borderRadius: 7, padding: "3px 8px", fontSize: 11, fontWeight: 700, color: "var(--ink-soft)", background: "var(--chip)" }}>{asset.symbol}</span>}
-          <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{asset.assetClass === "etf" ? "ETF" : asset.assetClass === "metal" ? "Metal" : "Stock"} · {n} token{n === 1 ? "" : "s"} on Solana</span>
-          {asset.cusip && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 700, color: "var(--grade-a)", background: "var(--grade-a-bg)" }}>{Icon.check(10)}CUSIP {asset.cusip}</span>
-          )}
         </div>
+        <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{asset.assetClass === "etf" ? "ETF" : asset.assetClass === "metal" ? "Metal" : "Stock"}</span>
       </div>
-      <span style={{ width: 26 }} />
+      <span style={{ flexGrow: 1 }} />
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>On-chain{top ? ` · ${top.symbol}` : ""}</span>
         <span style={{ ...NUM, fontSize: 30, fontWeight: 700, letterSpacing: -0.9 }}>{price != null ? usd(price) : "—"}</span>
         {change != null && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: change >= 0 ? "var(--grade-a)" : "var(--ink-soft)" }}>
@@ -123,6 +151,24 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
           <span style={{ fontSize: 11, color: "var(--grade-c)", fontWeight: 600 }}>where it trades · issuer lists {usd(top.listedPriceUsd)}</span>
         )}
       </div>
+      {detail.reference && <MarketPriceBlock detail={detail} />}
+    </div>
+  );
+}
+
+/** The real share (or ounce) off-chain, beside the on-chain price. Display only, never scored. */
+function MarketPriceBlock({ detail, compact }: { detail: AssetDetail; compact?: boolean }) {
+  const r = detail.reference!;
+  const status = r.marketOpen == null ? null : r.marketOpen ? "US market open" : "US market closed · on-chain open";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: compact ? 0 : 22, borderLeft: compact ? "none" : "1px solid var(--hairline)" }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>{r.basis === "ounce" ? "Spot · per ounce" : `On the exchange · ${r.ticker}`}</span>
+      <span style={{ ...NUM, fontSize: compact ? 20 : 30, fontWeight: 700, letterSpacing: compact ? -0.4 : -0.9, color: "var(--ink-soft)" }}>{usd(r.priceUsd)}</span>
+      {status && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--ink-faint)", fontWeight: 600 }}>
+          <span style={{ width: 7, height: 7, borderRadius: 999, background: r.marketOpen ? "var(--grade-a)" : "var(--neutral-bar)" }} />{status}
+        </span>
+      )}
     </div>
   );
 }
@@ -146,10 +192,11 @@ function useChart(detail: AssetDetail) {
   return { range, setRange, series, change, changePct, available };
 }
 
-function ListedDesktop({ detail, top, others }: { detail: AssetDetail; top?: AssetVariantView; others: AssetVariantView[] }) {
+function ListedDesktop({ detail, top, others, ctx }: { detail: AssetDetail; top?: AssetVariantView; others: AssetVariantView[]; ctx: HeldCtx }) {
   const c = useChart(detail);
   const price = top?.priceUsd ?? null;
   const ref = detail.priceHistory?.daily.reference?.ticker;
+  const all = top ? [top, ...others] : others;
   return (
     <main className="hidden lg:flex" style={{ padding: "20px 26px 24px", gap: 16, alignItems: "flex-start" }}>
       <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
@@ -160,20 +207,21 @@ function ListedDesktop({ detail, top, others }: { detail: AssetDetail; top?: Ass
             <RangeTabs value={c.range} onChange={c.setRange} available={c.available} />
           </div>
           <div style={{ marginTop: 8 }}>
-            <PriceChart token={c.series.token} reference={c.series.ref} refLabel={ref ? `${ref}, the listed share` : undefined} />
+            <PriceChart token={c.series.token} reference={c.series.ref} tokenLabel={top ? `${top.symbol} · on-chain` : undefined} refLabel={ref ? `${ref} · on the exchange` : undefined} />
           </div>
         </Panel>
         <StatGrid detail={detail} top={top} />
         <AboutCard detail={detail} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14, alignItems: "start" }}>
+          {top && <BenefitsCard top={top} />}
+          <Changes detail={detail} />
+        </div>
       </div>
-      <aside style={{ width: 352, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
-        {top && <TopTokenCard detail={detail} top={top} only={others.length === 0} />}
-        {others.length === 0 && <NothingToCompare name={detail.asset.name} />}
-        {top && <BenefitsCard top={top} />}
-        {detail.reference && <MarketPriceCard detail={detail} />}
+      <aside style={{ width: 360, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14 }}>
+        {ctx.heldWeaker && top && <HeldCard detail={detail} held={ctx.heldWeaker} top={top} swapFrom={ctx.swapFrom} />}
+        {top && <TopTokenCard detail={detail} top={top} only={others.length === 0} holds={ctx.holdsTop} alternative={!!ctx.heldWeaker} />}
+        {others.length > 0 ? <CompareButton detail={detail} all={all} heldMint={ctx.held?.variant.mint} /> : <NothingToCompare name={detail.asset.name} />}
         {top && <ExitCard mint={top.mint} />}
-        {others.length > 0 && <Compare assetId={detail.asset.assetId} others={others} />}
-        <Changes detail={detail} />
       </aside>
     </main>
   );
@@ -261,7 +309,7 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
     ...(asset.cusip ? [["CUSIP", asset.cusip] as [string, ReactNode]] : []),
     ["Tokens on Solana", n],
     ...(detail.tokenizedSupply != null ? [["Tokenized supply", Math.round(detail.tokenizedSupply).toLocaleString("en-US")] as [string, ReactNode]] : []),
-    ...(reference?.marketOpen != null ? [["Market", <span key="m" style={{ color: reference.marketOpen ? "var(--grade-a)" : "var(--ink-soft)" }}>{reference.marketOpen ? "Open" : "Closed"}</span>] as [string, ReactNode]] : []),
+    ...(reference?.marketOpen != null ? [["Market", <span key="m" style={{ color: reference.marketOpen ? "var(--grade-a)" : "var(--ink-soft)" }}>{reference.marketOpen ? "US market open" : "US market closed"}</span>] as [string, ReactNode]] : []),
   ];
   return (
     <Panel style={{ padding: "16px 20px" }}>
@@ -276,7 +324,7 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
   );
 }
 
-function TopTokenCard({ detail, top, only, compact }: { detail: AssetDetail; top: AssetVariantView; only?: boolean; compact?: boolean }) {
+function TopTokenCard({ detail, top, only, compact, holds, alternative }: { detail: AssetDetail; top: AssetVariantView; only?: boolean; compact?: boolean; holds?: boolean; alternative?: boolean }) {
   const s = top.score;
   const exit = useQuery({ queryKey: ["exit", top.mint], queryFn: () => api<{ ladder: { usdSize: number; status: string; roundTripPct: number | null }[] }>(`/api/exit?mint=${top.mint}`), staleTime: 120_000 });
   const leave = exit.data?.ladder[0];
@@ -284,7 +332,7 @@ function TopTokenCard({ detail, top, only, compact }: { detail: AssetDetail; top
   return (
     <Panel accent="good" style={{ padding: compact ? "15px 16px" : "17px 19px", borderRadius: compact ? 17 : 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={{ display: "inline-flex", borderRadius: 999, padding: "4px 10px", fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--grade-a)", background: "var(--grade-a-bg)" }}>{only ? "The only token" : "Highest rated"}</span>
+        <span style={{ display: "inline-flex", borderRadius: 999, padding: "4px 10px", fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--grade-a)", background: "var(--grade-a-bg)" }}>{holds ? (only ? "You hold the only token" : "You hold the highest rated") : alternative ? "Highest rated · the alternative" : only ? "The only token" : "Highest rated"}</span>
         <span style={{ flexGrow: 1 }} />
         <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{top.issuer} · {tierLabel(top.tier)}</span>
       </div>
@@ -397,26 +445,6 @@ function BenefitsCard({ top }: { top: AssetVariantView }) {
   );
 }
 
-function MarketPriceCard({ detail }: { detail: AssetDetail }) {
-  const r = detail.reference!;
-  const conf = r.confUsd != null && r.priceUsd ? (r.confUsd / r.priceUsd) * 100 : null;
-  const ageS = r.ageSec != null ? (r.ageSec < 60 ? `${Math.round(r.ageSec)}s ago` : `${Math.round(r.ageSec / 60)}m ago`) : null;
-  return (
-    <Panel style={{ padding: "16px 18px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Label>Market price</Label>
-        <span style={{ flexGrow: 1 }} />
-        <span style={{ display: "inline-flex", borderRadius: 999, padding: "3px 9px", fontSize: 10, fontWeight: 600, color: "var(--ink-soft)", background: "var(--track)" }}>{r.source === "pyth" ? "Pyth" : "Backpack"}</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginTop: 8 }}>
-        <span style={{ ...NUM, fontSize: 22, fontWeight: 700 }}>{usd(r.priceUsd)}</span>
-        <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{[conf != null ? `± ${conf.toFixed(3)}%` : null, ageS, r.marketOpen != null ? (r.marketOpen ? "market open" : "market closed") : null].filter(Boolean).join(" · ")}</span>
-      </div>
-      <p style={{ margin: "9px 0 0", fontSize: 11, lineHeight: 1.5, color: "var(--ink-faint)" }}>What the {r.basis === "ounce" ? "metal" : "share"} trades at off-chain. Every token {r.basis === "ounce" ? "priced per ounce" : "here"} is measured against it.</p>
-    </Panel>
-  );
-}
-
 function ExitCard({ mint }: { mint: string }) {
   const q = useQuery({ queryKey: ["exit", mint], queryFn: () => api<{ ladder: { usdSize: number; status: string; roundTripPct: number | null }[] }>(`/api/exit?mint=${mint}`), staleTime: 120_000 });
   const rungs = q.data?.ladder ?? [];
@@ -446,39 +474,7 @@ function ExitCard({ mint }: { mint: string }) {
   );
 }
 
-function Compare({ assetId, others }: { assetId: string; others: AssetVariantView[] }) {
-  const [open, setOpen] = useState(false);
-  const worst = [...others].sort((a, b) => (a.score.score ?? -1) - (b.score.score ?? -1))[0];
-  const risky = others.filter((o) => !o.score.routable).length;
-  return (
-    <Panel style={{ padding: 0, overflow: "hidden" }}>
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", background: "transparent", border: "none", padding: "14px 16px", cursor: "pointer", textAlign: "left", minHeight: 52, color: "var(--ink)", fontFamily: "inherit" }}>
-        <span style={{ ...DISPLAY, display: "flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 999, background: "#5C6068", color: "#fff", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>+{others.length}</span>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Compare all {others.length + 1} tokens</span>
-          <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{others.length} more{worst ? ` · lowest rated ${worst.score.grade}` : ""}{risky ? ` · ${risky} at risk` : ""}</span>
-        </div>
-        <span style={{ flexGrow: 1 }} />
-        <span style={{ color: "var(--ink-faint)", transform: open ? "rotate(180deg)" : undefined, transition: "transform 0.15s" }}>{Icon.chevronDown(16)}</span>
-      </button>
-      {open && others.map((v) => (
-        <Link key={v.mint} href={`/asset/${encodeURIComponent(assetId)}/rating/${v.mint}`} style={{ display: "flex", alignItems: "center", gap: 11, padding: "12px 16px", borderTop: "1px solid var(--track)", textDecoration: "none", color: "inherit", background: !v.score.routable ? "var(--danger-soft)" : undefined }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ ...DISPLAY, fontSize: 14, fontWeight: 600 }}>{v.symbol}</span>
-              {v.score.instrument.speculative && <span style={{ borderRadius: 999, padding: "1px 7px", fontSize: 10, fontWeight: 700, color: "var(--grade-c)", background: "var(--grade-c-bg)" }}>Speculative</span>}
-            </div>
-            <span style={{ fontSize: 11, color: !v.score.routable ? "var(--danger)" : "var(--ink-faint)", fontWeight: !v.score.routable ? 600 : 500 }}>
-              {v.issuer} · {usd(v.liquidityUsd, { compact: true })} liquidity{!v.score.routable ? " · not tradable" : ""}
-            </span>
-          </div>
-          <span style={{ flexGrow: 1 }} />
-          <GradePill grade={v.score.grade} score={v.score.score} size="sm" onWhite={!v.score.routable} />
-        </Link>
-      ))}
-    </Panel>
-  );
-}
+
 
 function Changes({ detail }: { detail: AssetDetail }) {
   const list = detail.signals.filter(isChange).slice(0, 4);
@@ -688,7 +684,7 @@ function RatingHistoryCard({ top }: { top: AssetVariantView }) {
 // ---------------------------------------------------------------------------------------------
 // mobile (AssetMobile)
 
-function AssetMobile({ detail, top, others, priv, swapFrom, options }: { detail: AssetDetail; top?: AssetVariantView; others: AssetVariantView[]; priv: boolean; swapFrom?: SwapFrom; options: TokenOption[] }) {
+function AssetMobile({ detail, top, others, priv, swapFrom, options, ctx }: { detail: AssetDetail; top?: AssetVariantView; others: AssetVariantView[]; priv: boolean; swapFrom?: SwapFrom; options: TokenOption[]; ctx: HeldCtx }) {
   const { asset } = detail;
   const c = useChart(detail);
   const benefits = top?.explanation?.benefits ?? [];
@@ -708,10 +704,11 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options }: { detail:
               <span style={{ ...DISPLAY, fontSize: 21, fontWeight: 700, letterSpacing: -0.4 }}>{asset.name}</span>
               {asset.symbol && <span style={{ display: "inline-flex", borderRadius: 6, padding: "2px 7px", fontSize: 10, fontWeight: 700, color: "var(--ink-soft)", background: "var(--track)" }}>{asset.symbol}</span>}
             </div>
-            <span style={{ fontSize: 11, color: priv ? "var(--grade-c)" : "var(--ink-faint)", fontWeight: priv ? 700 : 500 }}>{priv ? "Speculative · private company" : asset.cusip ? `CUSIP ${asset.cusip}` : `${detail.variants.length} tokens on Solana`}</span>
+            <span style={{ fontSize: 11, color: priv ? "var(--grade-c)" : "var(--ink-faint)", fontWeight: priv ? 700 : 500 }}>{priv ? "Speculative · private company" : asset.assetClass === "etf" ? "ETF" : asset.assetClass === "metal" ? "Metal" : "Stock"}</span>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+        {top && !priv && <span style={{ display: "block", marginTop: 14, fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>On-chain · {top.symbol}</span>}
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: top && !priv ? 2 : 14, flexWrap: "wrap" }}>
           <span style={{ ...NUM, fontSize: 33, fontWeight: 700, letterSpacing: -1 }}>{top ? usd(top.priceUsd) : "—"}</span>
           {c.change != null && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 13, fontWeight: 700, color: c.change >= 0 ? "var(--grade-a)" : "var(--ink-soft)" }}>
@@ -720,12 +717,15 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options }: { detail:
           )}
           <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{RANGE_WORDS[c.range]}</span>
         </div>
-        <div style={{ marginTop: 12 }}><PriceChart token={c.series.token} height={132} labels={false} /></div>
+        {detail.reference && !priv && <div style={{ marginTop: 10 }}><MarketPriceBlock detail={detail} compact /></div>}
+        <div style={{ marginTop: 12 }}><PriceChart token={c.series.token} reference={c.series.ref} height={132} labels={false} /></div>
         <div style={{ marginTop: 10 }}><RangeTabs value={c.range} onChange={c.setRange} available={c.available} full /></div>
       </div>
 
       <div style={{ flexGrow: 1, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 11 }}>
-        {top && <TopTokenCard detail={detail} top={top} only={others.length === 0} compact />}
+        {ctx.heldWeaker && top && <HeldCard detail={detail} held={ctx.heldWeaker} top={top} swapFrom={ctx.swapFrom} />}
+        {top && <TopTokenCard detail={detail} top={top} only={others.length === 0} compact holds={ctx.holdsTop} alternative={!!ctx.heldWeaker} />}
+        {others.length > 0 && top && <CompareButton detail={detail} all={[top, ...others]} heldMint={ctx.held?.variant.mint} />}
         {priv && top && (
           <div style={{ background: "var(--warn-soft)", borderRadius: 17, padding: "14px 16px", fontSize: 12, lineHeight: 1.55 }}>
             <b style={{ color: "var(--grade-c)" }}>Speculative. </b>{top.score.instrument.summary}
@@ -750,9 +750,7 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options }: { detail:
             </div>
           </section>
         )}
-        {others.length > 0 && <Compare assetId={asset.assetId} others={others} />}
         {others.length === 0 && <NothingToCompare name={asset.name} />}
-        {detail.reference && <MarketPriceCard detail={detail} />}
         {top && <ExitCard mint={top.mint} />}
         {detail.about && (
           <section style={{ background: "var(--surface)", borderRadius: 17, padding: "15px 16px" }}>

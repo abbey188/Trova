@@ -8,7 +8,7 @@ export const metadata = { title: "How ratings work · Trova" };
 export default function HelpPage() {
   return (
     <AppFrame active="none">
-      <div style={{ maxWidth: 560, width: "100%", margin: "0 auto", background: "var(--surface)", minHeight: "100%" }}>
+      <div style={{ maxWidth: 1000, width: "100%", margin: "0 auto", background: "var(--surface)", minHeight: "100%" }}>
         <HelpContent />
       </div>
     </AppFrame>

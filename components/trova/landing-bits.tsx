@@ -24,7 +24,7 @@ export function HowItWorksLink({ style }: { style?: React.CSSProperties }) {
       <button type="button" onClick={() => setOpen(true)} style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", padding: "12px 18px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", ...style }}>
         How ratings work
       </button>
-      <Sheet open={open} onClose={() => setOpen(false)} label="How ratings work">
+      <Sheet open={open} onClose={() => setOpen(false)} label="How ratings work" width={940}>
         <HelpContent onClose={() => setOpen(false)} />
       </Sheet>
     </>

@@ -52,14 +52,16 @@ export function RangeTabs({ value, onChange, available, full }: { value: RangeKe
   );
 }
 
-export function PriceChart({ token, reference, height = 248, labels = true, refLabel }: { token: Pt[]; reference?: Pt[]; height?: number; labels?: boolean; refLabel?: string }) {
+export function PriceChart({ token, reference, height = 248, labels = true, tokenLabel, refLabel }: { token: Pt[]; reference?: Pt[]; height?: number; labels?: boolean; tokenLabel?: string; refLabel?: string }) {
+  const [hover, setHover] = useState<number | null>(null);
   if (token.length < 2) {
     return <div style={{ height: Math.min(height, 140), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--ink-faint)" }}>Not enough trades in this range to draw.</div>;
   }
   const W = 1000;
   const H = height;
   const pad = 6;
-  const vals = [...token.map((p) => p.v), ...(reference ?? []).map((p) => p.v)];
+  const refIn = (reference ?? []).filter((p) => p.t >= token[0].t && p.t <= token[token.length - 1].t);
+  const vals = [...token.map((p) => p.v), ...refIn.map((p) => p.v)];
   const min = Math.min(...vals);
   const max = Math.max(...vals);
   const span = max - min || max * 0.02 || 1;
@@ -67,33 +69,58 @@ export function PriceChart({ token, reference, height = 248, labels = true, refL
   const t1 = token[token.length - 1].t;
   const x = (t: number) => ((t - t0) / (t1 - t0 || 1)) * W;
   const y = (v: number) => pad + (1 - (v - min) / span) * (H - pad * 2 - 4);
-  const line = (ps: Pt[]) => ps.filter((p) => p.t >= t0 && p.t <= t1).map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const line = (ps: Pt[]) => ps.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
   const last = token[token.length - 1];
+  // Up is green; down is drawn neutral — red is kept for "you can't get out".
+  const stroke = last.v >= token[0].v ? "var(--grade-a)" : "var(--ink-soft)";
   const intraday = t1 - t0 < 2 * 86_400;
   const fmtT = (t: number) => new Date(t * 1000).toLocaleString("en-GB", intraday ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" });
+  const fmtFull = (t: number) => new Date(t * 1000).toLocaleString("en-GB", intraday ? { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", year: "numeric" });
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => t0 + f * (t1 - t0));
   const fmtP = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString("en-US")}` : v >= 10 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`);
+  const fmtExact = (v: number) => `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: v >= 10 ? 2 : 4 })}`;
+
+  const nearest = (ps: Pt[], t: number) => ps.reduce((b, p) => (Math.abs(p.t - t) < Math.abs(b.t - t) ? p : b), ps[0]);
+  const hp = hover != null ? token[hover] : null;
+  const hr = hp && refIn.length ? nearest(refIn, hp.t) : null;
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const t = t0 + ((e.clientX - r.left) / r.width) * (t1 - t0);
+    let best = 0;
+    for (let i = 1; i < token.length; i++) if (Math.abs(token[i].t - t) < Math.abs(token[best].t - t)) best = i;
+    setHover(best);
+  };
+  const hx = hp ? (x(hp.t) / W) * 100 : 0;
 
   return (
     <div>
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Price from ${fmtP(token[0].v)} to ${fmtP(last.v)}`} style={{ display: "block", overflow: "visible" }}>
-        <g stroke="var(--track)" strokeWidth="1">
-          {[0, 0.25, 0.5, 0.75, 1].map((f) => <line key={f} x1="0" x2={W} y1={pad + f * (H - pad * 2)} y2={pad + f * (H - pad * 2)} vectorEffect="non-scaling-stroke" />)}
-        </g>
-        {reference && reference.length > 1 && (
-          <polyline points={line(reference)} fill="none" stroke="var(--ink-faint)" strokeWidth="1.4" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" opacity="0.7" />
-        )}
-        <polyline points={line(token)} fill="none" stroke="var(--ink)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </svg>
-      {/* the end dot and labels are HTML so they don't stretch with the chart */}
-      <div style={{ position: "relative", height: 0 }}>
-        <span style={{ position: "absolute", right: -4, top: -(H - y(last.v)) - 4.5, width: 9, height: 9, borderRadius: 999, background: "var(--ink)" }} />
+      <div style={{ position: "relative", touchAction: "pan-y" }} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
+        <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Price from ${fmtP(token[0].v)} to ${fmtP(last.v)}`} style={{ display: "block", overflow: "visible" }}>
+          <g stroke="var(--track)" strokeWidth="1">
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => <line key={f} x1="0" x2={W} y1={pad + f * (H - pad * 2)} y2={pad + f * (H - pad * 2)} vectorEffect="non-scaling-stroke" />)}
+          </g>
+          {refIn.length > 1 && (
+            <polyline points={line(refIn)} fill="none" stroke="var(--ink-faint)" strokeWidth="1.4" strokeDasharray="5 5" vectorEffect="non-scaling-stroke" opacity="0.8" />
+          )}
+          <polyline points={line(token)} fill="none" stroke={stroke} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {hp && <line x1={x(hp.t)} x2={x(hp.t)} y1={0} y2={H} stroke="var(--ink-faint)" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {/* dots and labels are HTML so they don't stretch with the chart */}
+        <span style={{ position: "absolute", right: -4, top: y(last.v) - 4.5, width: 9, height: 9, borderRadius: 999, background: stroke, pointerEvents: "none" }} />
+        {hp && <span style={{ position: "absolute", left: `calc(${hx}% - 5px)`, top: y(hp.v) - 5, width: 10, height: 10, borderRadius: 999, background: "var(--surface)", border: `2.5px solid ${stroke}`, pointerEvents: "none" }} />}
         {labels && (
           <>
-            <span style={{ ...NUM, position: "absolute", left: 4, top: -(H - pad) + 2, fontSize: 10, color: "var(--ink-faint)" }}>{fmtP(max)}</span>
-            <span style={{ ...NUM, position: "absolute", left: 4, top: -(H / 2) - 6, fontSize: 10, color: "var(--ink-faint)" }}>{fmtP((max + min) / 2)}</span>
-            <span style={{ ...NUM, position: "absolute", left: 4, top: -pad - 16, fontSize: 10, color: "var(--ink-faint)" }}>{fmtP(min)}</span>
+            <span style={{ ...NUM, position: "absolute", left: 4, top: pad - 2, fontSize: 10, color: "var(--ink-faint)", pointerEvents: "none" }}>{fmtP(max)}</span>
+            <span style={{ ...NUM, position: "absolute", left: 4, top: H / 2 - 14, fontSize: 10, color: "var(--ink-faint)", pointerEvents: "none" }}>{fmtP((max + min) / 2)}</span>
+            <span style={{ ...NUM, position: "absolute", left: 4, bottom: pad + 2, fontSize: 10, color: "var(--ink-faint)", pointerEvents: "none" }}>{fmtP(min)}</span>
           </>
+        )}
+        {hp && (
+          <div style={{ position: "absolute", top: 4, left: `${hx}%`, transform: hx > 70 ? "translateX(calc(-100% - 12px))" : "translateX(12px)", background: "var(--ink)", color: "var(--surface)", borderRadius: 10, padding: "8px 11px", fontSize: 11, lineHeight: 1.45, whiteSpace: "nowrap", pointerEvents: "none", boxShadow: "0 8px 24px rgba(20,22,26,0.18)", zIndex: 2 }}>
+            <div style={{ opacity: 0.7 }}>{fmtFull(hp.t)}</div>
+            <div style={{ ...NUM, fontWeight: 700 }}>{fmtExact(hp.v)} <span style={{ fontWeight: 500, opacity: 0.7 }}>{tokenLabel ?? "token"}</span></div>
+            {hr && <div style={{ ...NUM, fontWeight: 600, opacity: 0.85 }}>{fmtExact(hr.v)} <span style={{ fontWeight: 500, opacity: 0.8 }}>{refLabel ?? "listed share"}</span></div>}
+          </div>
         )}
       </div>
       {labels && (
@@ -101,9 +128,12 @@ export function PriceChart({ token, reference, height = 248, labels = true, refL
           {ticks.map((t, i) => <span key={i} style={{ fontSize: 10, color: "var(--ink-faint)" }}>{fmtT(t)}</span>)}
         </div>
       )}
-      {refLabel && reference && reference.length > 1 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: "var(--ink-faint)", padding: "2px 4px 0" }}>
-          <span style={{ width: 16, borderTop: "1.5px dashed var(--ink-faint)" }} />{refLabel}
+      {labels && (tokenLabel || (refLabel && refIn.length > 1)) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 10, color: "var(--ink-faint)", padding: "4px 4px 0", flexWrap: "wrap" }}>
+          {tokenLabel && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, height: 2.5, borderRadius: 2, background: stroke }} />{tokenLabel}</span>}
+          {refLabel && refIn.length > 1 && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span style={{ width: 16, borderTop: "1.5px dashed var(--ink-faint)" }} />{refLabel}</span>}
+          <span style={{ flexGrow: 1 }} />
+          <span>Hover for prices</span>
         </div>
       )}
     </div>
