@@ -117,7 +117,8 @@ export default async function Landing() {
   const [cached, logos] = await Promise.all([landingData(), getCompanyLogos().catch(() => new Map<string, string>())]);
   const d = {
     ...cached,
-    teslaLogo: cached.teslaLogo ?? logos.get("tesla") ?? null,
+    // The fresh company logo first: the cached one may be a fallback captured during an outage.
+    teslaLogo: logos.get("tesla") ?? cached.teslaLogo ?? null,
     cluster: CLUSTER.map(([id, name]) => ({ id, name, logo: logos.get(id) ?? null })),
   };
   const back = (t: typeof d.goodTrip) => (t && t.status === "ok" && t.roundTripPct != null ? 500 * (1 - t.roundTripPct / 100) : null);
