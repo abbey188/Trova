@@ -454,8 +454,9 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     cash,
     otherTokens,
     scores: { overall: scored.overall, ownership: scored.ownership, exit: scored.exit },
-    needsAttentionUsd: scored.needsAttentionUsd,
-    needsAttentionCount: holdings.filter((h) => h.valueUsd > 0 && needsAttention(h.variant.score)).length,
+    // Needs attention = the rating says so, OR the live sale does: no route, or 10%+ lost selling now.
+    needsAttentionUsd: holdings.filter((h) => h.valueUsd > 0 && attention(h)).reduce((s, h) => s + h.valueUsd, 0),
+    needsAttentionCount: holdings.filter((h) => h.valueUsd > 0 && attention(h)).length,
     speculativeUsd: scored.speculativeUsd,
     speculativeCount: holdings.filter((h) => h.valueUsd > 0 && h.variant.score.instrument.speculative).length,
     valueHistory: valueHistory(holdings, closesByMint),
@@ -467,6 +468,13 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     historyDays,
     warnings,
   };
+}
+
+/** A holding needs attention when its rating flags it or its measured sale does. */
+const SELL_LOSS_ATTENTION_PCT = 10;
+function attention(h: Holding): boolean {
+  const s = h.sellNow;
+  return needsAttention(h.variant.score) || s?.status === "no-route" || (s?.status === "ok" && (s.lossPct ?? 0) >= SELL_LOSS_ATTENTION_PCT);
 }
 
 /** Holdings charted on the home screen, largest first. One candle request each. */

@@ -27,9 +27,12 @@ import type { Holding, PortfolioSummary, Signal } from "@/lib/types";
 const RANGES = [["1W", 7], ["1M", 30], ["3M", 90], ["1Y", 365]] as const;
 type RangeKey = (typeof RANGES)[number][0];
 
+/** At risk: the rating flags it, or the live sale does — no route, or 10%+ lost selling now. */
 function flagged(h: Holding) {
   const s = h.variant.score;
-  return !s.routable || !s.rated || s.grade === "D" || s.advisory != null;
+  const sale = h.sellNow;
+  return !s.routable || !s.rated || s.grade === "D" || s.advisory != null
+    || sale?.status === "no-route" || (sale?.status === "ok" && (sale.lossPct ?? 0) >= 10);
 }
 
 export const optionOf = toOption;
