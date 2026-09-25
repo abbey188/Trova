@@ -51,7 +51,7 @@ export function SearchBox({ className = "", large }: { className?: string; large
             if (e.key === "Enter" && wallet) { setOpen(false); router.push(`/p/${wallet}`); }
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="Search a stock"
+          placeholder="Search a stock or paste a wallet"
           autoComplete="off"
           className="w-full bg-transparent text-[13px] outline-none placeholder:text-[var(--ink-faint)]" style={{ color: "var(--ink)" }}
         />
