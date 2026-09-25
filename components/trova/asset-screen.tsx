@@ -13,7 +13,7 @@ import { HelpButton } from "@/components/trova/frame";
 import { CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing } from "@/components/trova/kit";
 import { PriceChart, RangeTabs, useRangeSeries, type RangeKey } from "@/components/trova/price-chart";
 import { isChange, signalMeta, signalTitle } from "@/components/trova/signal-line";
-import { TradeTrigger } from "@/components/trova/trade-trigger";
+import { SellTrigger, TradeTrigger } from "@/components/trova/trade-trigger";
 import { swapFromHolding, toOption, type SwapFrom, type TokenOption } from "@/components/trova/trade-sheet";
 import { useWalletAddress } from "@/components/trova/wallet";
 import { api } from "@/lib/client";
@@ -34,15 +34,17 @@ export function AssetScreen({ detail }: { detail: AssetDetail }) {
   const priv = !!privateMark || shown.every((v) => v.score.instrument.speculative);
   const options = shown.map(toOption);
   const swapFrom = useSwapFrom(asset.assetId, top);
+  const sellFrom = useSellFrom(asset.assetId);
   const held = useHeld(asset.assetId, shown);
   // The token you hold, when it isn't the soundest one — the page leads with it.
   const heldWeaker = held && top && held.variant.mint !== top.mint ? held : null;
   const holdsTop = !!held && !!top && held.variant.mint === top.mint;
-  const ctx: HeldCtx = { held, heldWeaker, holdsTop, swapFrom };
+  const ctx: HeldCtx = { held, heldWeaker, holdsTop, swapFrom, sellFrom };
 
   const actions = top ? (
     <>
       <WatchButton assetId={asset.assetId} />
+      {sellFrom && <SellTrigger from={sellFrom} assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} />}
       {swapFrom && <TradeTrigger label="Swap" variant="secondary" assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} options={[toOption(top)]} defaultMint={top.mint} from={swapFrom} />}
       <TradeTrigger label={`Buy${priv ? ` ${top.symbol}` : ""}`} assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} options={options} defaultMint={top.mint} />
     </>
@@ -67,6 +69,7 @@ interface HeldCtx {
   heldWeaker: HeldCtx["held"];
   holdsTop: boolean;
   swapFrom?: SwapFrom;
+  sellFrom?: SwapFrom;
 }
 
 /**
@@ -85,6 +88,14 @@ function useHeld(assetId: string, shown: AssetVariantView[]): HeldCtx["held"] {
   const variant = mint ? shown.find((v) => v.mint === mint) : undefined;
   if (!variant) return null;
   return { variant, valueUsd: h?.valueUsd ?? null, sellLossPct: h?.sellNow?.status === "ok" ? h.sellNow.lossPct ?? null : null };
+}
+
+/** The connected wallet's largest position in any token of this company — what "Sell" sells. */
+function useSellFrom(assetId: string): SwapFrom | undefined {
+  const address = useWalletAddress();
+  const p = useQuery({ queryKey: ["portfolio", address], queryFn: () => api<PortfolioSummary>(`/api/portfolio?wallet=${address}`), enabled: !!address, staleTime: 60_000 });
+  const h = (p.data?.holdings ?? []).filter((x) => x.asset.assetId === assetId && x.rawAmount && x.rawAmount !== "0" && x.decimals != null).sort((a, b) => b.valueUsd - a.valueUsd)[0];
+  return h ? swapFromHolding(h) : undefined;
 }
 
 /** A position in a weaker token of this company that the connected wallet actually holds. */
@@ -139,6 +150,8 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
         <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{asset.assetClass === "etf" ? "ETF" : asset.assetClass === "metal" ? "Metal" : "Stock"}</span>
       </div>
       <span style={{ flexGrow: 1 }} />
+      {/* Both prices hang from the same top line, so their labels align whatever sits beneath. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 22 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>On-chain{top ? ` · ${top.symbol}` : ""}</span>
         <span style={{ ...NUM, fontSize: 30, fontWeight: 700, letterSpacing: -0.9 }}>{price != null ? usd(price) : "—"}</span>
@@ -152,6 +165,7 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
         )}
       </div>
       {detail.reference && top?.gapPercent != null && <MarketPriceBlock detail={detail} />}
+      </div>
     </div>
   );
 }
@@ -162,7 +176,7 @@ function MarketPriceBlock({ detail, compact }: { detail: AssetDetail; compact?: 
   // Only shares keep exchange hours; spot metal trades around the clock.
   const status = r.basis !== "share" || r.marketOpen == null ? null : r.marketOpen ? "US market open" : "US market closed · on-chain open";
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: compact ? 0 : 22, borderLeft: compact ? "none" : "1px solid var(--hairline)" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: compact ? 0 : 22, borderLeft: compact ? "none" : "1px solid var(--hairline)", alignSelf: "stretch" }}>
       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>{r.basis === "ounce" ? "Spot · per ounce" : `On the exchange · ${r.ticker}`}</span>
       <span style={{ ...NUM, fontSize: compact ? 20 : 30, fontWeight: 700, letterSpacing: compact ? -0.4 : -0.9, color: "var(--ink-soft)" }}>{usd(r.priceUsd)}</span>
       {status && (
@@ -302,6 +316,12 @@ function StatGrid({ detail, top, compact }: { detail: AssetDetail; top?: AssetVa
   );
 }
 
+/** Wikipedia text is CC BY-SA: say where it came from and link it. */
+function AboutCredit({ detail }: { detail: AssetDetail }) {
+  if (detail.aboutSource !== "wikipedia" || !detail.aboutUrl) return null;
+  return <> <a href={detail.aboutUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--ink-faint)", textDecoration: "underline", whiteSpace: "nowrap" }}>From Wikipedia</a></>;
+}
+
 function AboutCard({ detail }: { detail: AssetDetail }) {
   const { asset, stats, reference } = detail;
   const n = detail.variants.filter((v) => !v.score.hidden).length;
@@ -315,7 +335,7 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
   return (
     <Panel style={{ padding: "16px 20px" }}>
       <Label>About {asset.name}</Label>
-      {detail.about && <p style={{ margin: "9px 0 0", fontSize: 12, lineHeight: 1.65, color: "var(--ink-soft)", maxWidth: "92ch" }}>{detail.about}</p>}
+      {detail.about && <p style={{ margin: "9px 0 0", fontSize: 12, lineHeight: 1.65, color: "var(--ink-soft)", maxWidth: "92ch" }}>{detail.about}<AboutCredit detail={detail} /></p>}
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${facts.length}, minmax(0, 1fr))`, gap: 14, marginTop: 16 }}>
         {facts.map(([l, v]) => (
           <div key={l} style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 10, color: "var(--ink-faint)" }}>{l}</span><span style={{ ...NUM, fontSize: 14, fontWeight: 700 }}>{v}</span></div>
@@ -573,6 +593,12 @@ function PrivateDesktop({ detail, top, others }: { detail: AssetDetail; top?: As
           </Panel>
         )}
 
+        {detail.about && (
+          <Panel style={{ padding: "16px 20px" }}>
+            <Label>About {asset.name}</Label>
+            <p style={{ margin: "9px 0 0", fontSize: 12, lineHeight: 1.65, color: "var(--ink-soft)", maxWidth: "92ch" }}>{detail.about}<AboutCredit detail={detail} /></p>
+          </Panel>
+        )}
         <Panel style={{ padding: "16px 20px 10px" }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <span style={{ ...DISPLAY, fontSize: 15, fontWeight: 700 }}>Price</span>
@@ -756,13 +782,14 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options, ctx }: { de
         {detail.about && (
           <section style={{ background: "var(--surface)", borderRadius: 17, padding: "15px 16px" }}>
             <Label>About {asset.name}</Label>
-            <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.6, color: "var(--ink-soft)" }}>{detail.about}</p>
+            <p style={{ margin: "8px 0 0", fontSize: 12, lineHeight: 1.6, color: "var(--ink-soft)" }}>{detail.about}<AboutCredit detail={detail} /></p>
           </section>
         )}
       </div>
 
       {top && (
         <div style={{ position: "sticky", bottom: 76, display: "flex", gap: 10, padding: "12px 14px", background: "var(--surface)", borderTop: "1px solid var(--hairline)", zIndex: 20 }}>
+          {ctx.sellFrom && <SellTrigger from={ctx.sellFrom} assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} block />}
           {swapFrom && <TradeTrigger label="Swap" variant="secondary" assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} options={[toOption(top)]} defaultMint={top.mint} from={swapFrom} />}
           <div style={{ flexGrow: 1, display: "flex" }}>
             <TradeTrigger label={`Buy ${top.symbol}`} variant="block" assetName={asset.name} assetId={asset.assetId} logoUrl={asset.logoUrl} options={options} defaultMint={top.mint} />

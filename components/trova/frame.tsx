@@ -7,11 +7,13 @@
 
 import Link from "next/link";
 import { useTheme } from "next-themes";
+import { useQuery } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { HelpContent } from "@/components/trova/help-content";
 import { DISPLAY, Icon } from "@/components/trova/kit";
 import { ProfileContent } from "@/components/trova/profile";
+import { api } from "@/lib/client";
 import { useWalletAddress } from "@/components/trova/wallet";
 
 export type Section = "home" | "markets" | "updates" | "profile" | "none";
@@ -123,9 +125,19 @@ export function AppFrame({ active, children }: { active: Section; children: Reac
   );
 }
 
-/** The avatar: the nickname's (or address's) first letter on the canvas's pale green disc. */
+/** The name saved on this device (Profile / the first-connect prompt), shared by every avatar. */
+export function useNickname(): string | null {
+  const me = useQuery({ queryKey: ["me"], queryFn: () => api<{ nickname: string | null }>("/api/me", { device: true }), retry: false, staleTime: 300_000 });
+  return me.data?.nickname?.trim() || null;
+}
+
+/**
+ * The avatar: your name's first letter on the canvas's pale green disc — the same letter on every
+ * screen — else the address's. Pass `name` to override (another wallet's home shows no name).
+ */
 export function Avatar({ size = 40, name, address }: { size?: number; name?: string | null; address?: string | null }) {
-  const letter = (name?.trim()?.[0] ?? address?.[0] ?? "T").toUpperCase();
+  const saved = useNickname();
+  const letter = ((name === undefined ? saved : name)?.[0] ?? address?.[0] ?? "T").toUpperCase();
   return (
     <span aria-hidden="true" style={{ ...DISPLAY, display: "flex", alignItems: "center", justifyContent: "center", width: size, height: size, borderRadius: 999, background: "var(--avatar)", color: "var(--avatar-ink)", fontSize: Math.round(size * 0.38), fontWeight: 700, flexShrink: 0 }}>
       {letter}

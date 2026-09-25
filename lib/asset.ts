@@ -3,6 +3,7 @@
 
 import { getBackpackIssuedMints, getExternalKlines, getExternalTickers, getSecurities, type BpKline } from "./backpack";
 import { explain } from "./explain";
+import { aboutFor } from "./about";
 import { logoFor } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
@@ -243,8 +244,19 @@ export async function buildAssetDetail(
     }
   }
 
+  const about = await aboutFor({
+    assetId,
+    issuerText: aboutText(asset),
+    name: assetInfo.name,
+    ticker,
+    legalName: securities?.get(ticker)?.name ?? null,
+    assetClass: assetInfo.assetClass,
+    speculative: views.length > 0 && views.every((v) => v.score.instrument.speculative),
+    tokens: views.filter((v) => !v.score.hidden).length,
+  });
+
   return {
-    asset: { ...assetInfo, cusip: securities?.get(ticker)?.cusip ?? null, logoUrl: await logoFor(assetId).catch(() => null) },
+    asset: { ...assetInfo, cusip: securities?.get(ticker)?.cusip ?? null, logoUrl: await logoFor(assetId, ticker, views.length > 0 && views.every((v) => v.score.instrument.speculative)).catch(() => null) },
     asOf: Date.now(),
     methodVersion: METHOD_VERSION,
     stats: asset?.stats
@@ -264,7 +276,9 @@ export async function buildAssetDetail(
     best: best ? { mint: best.variant.mint, symbol: best.variant.symbol, closeCall, runnerUpMint: runnerUp?.variant.mint ?? null } : null,
     externalRating: externalRating(risk),
     priceHistory: priceHistory(chartDaily, chartIntraday, klinesDaily, klinesHourly, ticker, reference),
-    about: aboutText(asset),
+    about: about.text,
+    aboutSource: about.source,
+    aboutUrl: about.url,
     tokenizedSupply: tokenizedSupply(variants),
     signals: change?.signals ?? [],
     historyDays,

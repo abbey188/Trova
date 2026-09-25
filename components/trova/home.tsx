@@ -83,7 +83,7 @@ export function HomeScreen({ address }: { address: string }) {
       {/* desktop header */}
       <header className="hidden lg:flex" style={{ alignItems: "center", gap: 16, padding: "17px 26px", background: "var(--surface)", borderBottom: "1px solid var(--hairline)", position: "sticky", top: 0, zIndex: 30 }}>
         <button type="button" onClick={() => setProfile(true)} aria-label="Profile" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", borderRadius: 999 }}>
-          <Avatar size={40} name={nickname} address={demo ? null : address} />
+          <Avatar size={40} name={demo || mine ? undefined : null} address={demo ? null : address} />
         </button>
         <span style={{ ...DISPLAY, fontSize: 18, fontWeight: 600 }}>{greeting}</span>
         {demo && <DemoBadge />}
@@ -99,7 +99,7 @@ export function HomeScreen({ address }: { address: string }) {
       {/* mobile header */}
       <header className="flex lg:hidden" style={{ alignItems: "center", gap: 11, padding: "18px 18px 15px", background: "var(--surface)" }}>
         <button type="button" onClick={() => setProfile(true)} aria-label="Profile" style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", borderRadius: 999 }}>
-          <Avatar size={40} name={nickname} address={demo ? null : address} />
+          <Avatar size={40} name={demo || mine ? undefined : null} address={demo ? null : address} />
         </button>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <span style={{ ...DISPLAY, fontSize: 17, fontWeight: 600 }}>{greeting}</span>

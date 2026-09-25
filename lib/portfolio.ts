@@ -7,7 +7,7 @@ import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT, type WalletToken } from "./helius";
 import { explain } from "./explain";
-import { getCompanyLogos } from "./logos";
+import { getCompanyLogos, tickerLogo } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { sellNow } from "./jupiter";
@@ -82,7 +82,7 @@ const pct = (share: number) => `${Math.round(share * 100)}%`;
 const rating = (s: TrovaScore) => (s.score == null ? "NR" : `${s.grade} ${s.score}`);
 
 function assetOf(entry: UniverseEntry, logos?: Map<string, string>): Asset {
-  return { assetId: entry.asset.assetId, name: entry.asset.name, symbol: entry.asset.symbol, assetClass: entry.assetClass, logoUrl: logos?.get(entry.asset.assetId) ?? null };
+  return { assetId: entry.asset.assetId, name: entry.asset.name, symbol: entry.asset.symbol, assetClass: entry.assetClass, logoUrl: logos?.get(entry.asset.assetId) ?? tickerLogo(entry.asset.assetId, entry.asset.symbol, entry.assetClass === "other") };
 }
 
 function variantView(v: TxzVariant, score: TrovaScore, assetId: string, backpackIssued: boolean): Variant {

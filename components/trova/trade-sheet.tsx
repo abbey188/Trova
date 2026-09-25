@@ -532,3 +532,118 @@ function Result({ phase, symbol, onClose }: { phase: Extract<Phase, { kind: "sen
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// sell — a holding back to USDC. Measured the same way: the quote is the sale itself.
+
+const FRACTIONS = [["25%", 25n], ["50%", 50n], ["All", 100n]] as const;
+
+export function SellSheet({ open, onClose, assetName, assetId, logoUrl, from }: {
+  open: boolean; onClose: () => void; assetName: string; assetId?: string; logoUrl?: string | null; from: SwapFrom;
+}) {
+  const [pct, setPct] = useState<bigint>(100n);
+  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const connected = useConnectedWallet(solanaClient);
+  useEffect(() => { setPct(100n); setPhase({ kind: "idle" }); }, [open]);
+  const busy = phase.kind === "building" || phase.kind === "signing" || phase.kind === "sent";
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [open, onClose, busy]);
+
+  const rawIn = ((BigInt(from.rawAmount) * pct) / 100n).toString();
+  const units = Number(rawIn) / 10 ** from.decimals;
+  const worth = (from.valueUsd * Number(pct)) / 100;
+  const quote = useQuery({
+    queryKey: ["quote", from.mint, USDC, rawIn],
+    queryFn: () => api<Quote>(`/api/quote?inputMint=${from.mint}&outputMint=${USDC}&amount=${rawIn}&slippageBps=100`),
+    enabled: open && rawIn !== "0",
+    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+  if (!open || typeof document === "undefined") return null;
+  const q = quote.data;
+  const quoting = quote.isPending && quote.fetchStatus !== "idle";
+  const got = q?.status === "ok" ? q.outUi ?? null : null;
+  const loss = got != null && worth > 0 ? Math.max(0, (1 - got / worth) * 100) : null;
+  const finished = phase.kind === "done" || phase.kind === "sent";
+
+  const body = finished ? <Result phase={phase} symbol="USDC" onClose={onClose} /> : (
+    <>
+      <div style={{ background: "var(--canvas)", borderRadius: 17, padding: "15px 16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 700 }}>You sell</span>
+          <span style={{ flexGrow: 1 }} />
+          {from.grade && <GradePill grade={from.grade} score={from.score ?? null} size="sm" onWhite />}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 11 }}>
+          <CompanyLogo src={logoUrl} name={assetName} id={assetId} size={40} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ ...NUM, fontSize: 22, fontWeight: 700 }}>{fmtUnits(units)}</span>
+            <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{from.symbol} · {usd(worth)}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 7, marginTop: 12 }}>
+          {FRACTIONS.map(([l, f]) => (
+            <button key={l} type="button" disabled={busy} onClick={() => setPct(f)} aria-pressed={pct === f}
+              style={{ flexGrow: 1, borderRadius: 10, padding: "9px 0", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: pct === f ? "1px solid var(--ink)" : "1px solid var(--hairline)", background: pct === f ? "var(--ink)" : "var(--surface)", color: pct === f ? "var(--surface)" : "var(--ink-soft)" }}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", margin: "-13px 0", position: "relative", zIndex: 2 }}>
+        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, background: "var(--ink)", color: "var(--surface)", border: "4px solid var(--surface)" }}>{Icon.down(14)}</span>
+      </div>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 17, padding: "15px 16px" }}>
+        <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 700 }}>You receive</span>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
+          <span style={{ ...NUM, fontSize: 22, fontWeight: 700 }}>{quoting ? "…" : got != null ? usd(got) : "—"}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-soft)" }}>USDC</span>
+        </div>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <Details>
+          {q?.status === "ok" ? (
+            <>
+              <DetailRow label="Route" value={`Jupiter · ${(q.routeLabels ?? []).join(", ") || "direct"}`} />
+              {loss != null && <DetailRow label="The sale gives up" value={`${usd(Math.max(0, worth - (got ?? 0)))} · ${fmtPct(loss)}`} color={lossTone(loss)} />}
+              <span style={{ fontSize: 11, lineHeight: 1.45, color: "var(--ink-faint)" }}>Measured: this is the sale itself, quoted through Jupiter just now, against what the holding is valued at.</span>
+            </>
+          ) : <QuoteState quoting={quoting} status={q?.status} symbol={from.symbol} />}
+        </Details>
+      </div>
+    </>
+  );
+
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-label={`Sell ${from.symbol}`} className="items-end md:items-center" style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", justifyContent: "center" }}>
+      <button type="button" aria-label="Close" onClick={() => !busy && onClose()} style={{ position: "absolute", inset: 0, background: "rgba(20,22,26,0.55)", border: "none", cursor: "default" }} />
+      <div className="rounded-t-[24px] md:rounded-[24px]" style={{ position: "relative", width: "min(440px, 100vw)", maxHeight: "94vh", overflowY: "auto", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
+        <header style={{ display: "flex", alignItems: "center", gap: 11, padding: "18px 18px 14px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ ...DISPLAY, fontSize: 17, fontWeight: 600 }}>Sell {from.symbol}</span>
+            <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Back to USDC, in your own wallet</span>
+          </div>
+          <span style={{ flexGrow: 1 }} />
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Close" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, marginRight: -6, borderRadius: 12, color: "var(--ink-faint)", background: "transparent", border: "none", cursor: "pointer" }}>{Icon.close()}</button>
+        </header>
+        <div style={{ padding: "0 18px", display: "flex", flexDirection: "column", gap: 4 }}>{body}</div>
+        {!finished && (
+          <div style={{ padding: "14px 18px calc(26px + env(safe-area-inset-bottom, 0px))" }}>
+            {!connected ? <ConnectButton size="lg" />
+              : connected.signer == null ? <span style={{ fontSize: 12, color: "var(--danger)" }}>This wallet is read-only here, so it cannot sign a trade.</span>
+              : <SendButton account={connected.account} disabled={q?.status !== "ok" || busy} phase={phase} setPhase={setPhase} label="Review in your wallet" note="One signature"
+                  request={{ inputMint: from.mint, outputMint: USDC, amount: rawIn, slippageBps: 100 }} />}
+            {phase.kind === "failed" && <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--danger)" }}>{phase.message}</p>}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}

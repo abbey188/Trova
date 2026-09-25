@@ -8,7 +8,7 @@
 // Rows whose mint was never snapshotted come back with grade null — unrated, and labelled as such.
 // A missing grade must never render as a bad one.
 
-import { getCompanyLogos, isCleanLogo } from "./logos";
+import { getCompanyLogos, isCleanLogo, tickerLogo } from "./logos";
 import { selectRows } from "./supabase-rest";
 import { getAsset, getCurated, getTrending, searchAssets, type CuratedList } from "./tokens-xyz";
 import type { MarketRow, MarketsOverview, Rating } from "./types";
@@ -101,7 +101,8 @@ function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>, 
     name: cleanName(r.name ?? r.symbol ?? ""),
     category: r.category ?? null,
     // Company logos only: the trending feed's token icons carry the issuer's pattern and look muddy.
-    logoUrl: (r.assetId ? logos?.get(r.assetId) : undefined) ?? (isCleanLogo(r.imageUrl) ? r.imageUrl : null),
+    logoUrl: (r.assetId ? logos?.get(r.assetId) : undefined) ?? (isCleanLogo(r.imageUrl) ? r.imageUrl : null)
+      ?? tickerLogo(r.assetId ?? "", /^xstock$/i.test(r.symbol ?? "") ? null : r.symbol, g?.speculative),
     priceUsd: num(m.price),
     liquidityUsd: num(m.liquidity),
     volume24hUsd: num(m.volume24hUSD),

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { TradeSheet, type SwapFrom, type TokenOption } from "@/components/trova/trade-sheet";
+import { SellSheet, TradeSheet, type SwapFrom, type TokenOption } from "@/components/trova/trade-sheet";
 
 /** A button that opens the trade sheet. Lets server-rendered pages offer Buy / Move without state. */
 export function TradeTrigger({
@@ -47,6 +47,23 @@ export function TradeTrigger({
       {/* Keep the sheet's clicks from reaching a tappable card or row it was opened from. */}
       <span onClick={(e) => e.stopPropagation()} style={{ display: "contents" }}>
       <TradeSheet open={open} onClose={() => setOpen(false)} assetName={assetName} assetId={assetId} logoUrl={logoUrl} options={options} defaultMint={defaultMint} from={from} />
+      </span>
+    </>
+  );
+}
+
+/** "Sell" — a holding back to USDC. Shown only where the connected wallet holds the token. */
+export function SellTrigger({ from, assetName, assetId, logoUrl, block }: { from: SwapFrom; assetName: string; assetId?: string; logoUrl?: string | null; block?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
+        className={`${block ? "h-[54px] rounded-[15px] px-5 text-[15px]" : "h-10 rounded-[11px] px-[18px] text-[13px]"} inline-flex items-center justify-center whitespace-nowrap`}
+        style={{ border: "1px solid var(--hairline)", color: "var(--ink)", background: "var(--surface)", fontWeight: 600 }}>
+        Sell
+      </button>
+      <span onClick={(e) => e.stopPropagation()} style={{ display: "contents" }}>
+        <SellSheet open={open} onClose={() => setOpen(false)} assetName={assetName} assetId={assetId} logoUrl={logoUrl} from={from} />
       </span>
     </>
   );

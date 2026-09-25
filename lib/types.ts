@@ -499,6 +499,9 @@ export interface AssetDetail {
   priceHistory: PriceHistory | null;
   /** tokens.xyz's description of the company. */
   about: string | null;
+  /** Where `about` came from: the issuer (tokens.xyz), Wikipedia (credited + linked), or our own line. */
+  aboutSource?: "issuer" | "wikipedia" | "trova";
+  aboutUrl?: string | null;
   /** Share-equivalents on-chain across every token for this company. */
   tokenizedSupply: number | null;
   signals: Signal[];

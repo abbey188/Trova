@@ -36,6 +36,19 @@ export async function getCompanyLogos(): Promise<Map<string, string>> {
   return map;
 }
 
-export async function logoFor(assetId: string): Promise<string | null> {
-  return (await getCompanyLogos()).get(assetId) ?? null;
+export async function logoFor(assetId: string, ticker?: string, speculative?: boolean): Promise<string | null> {
+  return (await getCompanyLogos()).get(assetId) ?? tickerLogo(assetId, ticker, speculative);
 }
+
+/**
+ * The second source: our /api/logo proxy (Financial Modeling Prep marks), by listed ticker. Never for
+ * a private company — its "ticker" is ours, and a collision would show another company's mark.
+ */
+export function tickerLogo(assetId: string, ticker: string | null | undefined, speculative?: boolean): string | null {
+  const t = (ticker ?? "").toUpperCase();
+  if (speculative || assetId.startsWith("pre-") || !/^[A-Z][A-Z0-9.]{0,9}$/.test(t)) return null;
+  return `/api/logo/${t}`;
+}
+
+/** A logo from the ticker source is a white mark for dark grounds — the UI draws it on a dark disc. */
+export const isTickerLogo = (url: string | null | undefined) => !!url && url.startsWith("/api/logo/");
