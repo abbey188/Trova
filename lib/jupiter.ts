@@ -45,7 +45,9 @@ interface RawQuote extends Record<string, unknown> {
 export function referral(): { feeAccount?: string; platformFeeBps?: number } {
   const feeAccount = process.env.JUPITER_REFERRAL_ACCOUNT?.trim();
   const bps = Number(process.env.JUPITER_REFERRAL_FEE_BPS ?? 0);
-  if (!feeAccount || !(bps > 0)) return {};
+  // A fee account Jupiter cannot find makes EVERY swap fail, so anything that is not a plausible
+  // address (a placeholder left in an env file, say) switches referral off instead.
+  if (!feeAccount || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(feeAccount) || !(bps > 0)) return {};
   return { feeAccount, platformFeeBps: Math.min(bps, 100) };
 }
 
