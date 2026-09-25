@@ -7,11 +7,13 @@ import { useMemo, useState } from "react";
 import { RangeChart, Sparkline } from "@/components/trova/charts";
 import { GradeBadge } from "@/components/trova/grade-badge";
 import { AssetLogo } from "@/components/trova/search";
+import { TradeTrigger } from "@/components/trova/trade-trigger";
+import type { TokenOption } from "@/components/trova/trade-sheet";
 import { Card } from "@/components/trova/shell";
 import { useWalletAddress } from "@/components/trova/wallet";
 import { api, shortAddress } from "@/lib/client";
 import { count, usd } from "@/lib/format";
-import type { Holding, MonitoringStats, PortfolioSummary, Rating, Signal } from "@/lib/types";
+import type { Holding, MonitoringStats, PortfolioSummary, Rating, Signal, Variant } from "@/lib/types";
 
 const gradeOf = (s: number): Rating => (s >= 80 ? "A" : s >= 65 ? "B" : s >= 50 ? "C" : "D");
 const TONE: Record<Rating, string> = { A: "var(--grade-a)", B: "var(--grade-b)", C: "var(--grade-c)", D: "var(--grade-d)", NR: "var(--grade-nr)" };
@@ -133,7 +135,7 @@ export function PortfolioView({ address }: { address: string }) {
                 <div className="hidden grid-cols-[minmax(0,1fr)_100px_120px_110px_76px] gap-4 px-5 py-2 text-[11px] font-semibold md:grid" style={{ color: "var(--ink-faint)", borderBottom: "1px solid var(--hairline)" }}>
                   <span>Company</span><span>90 days</span><span className="text-right">Value</span><span className="text-right">If sold today</span><span className="text-right">Rating</span>
                 </div>
-                {shown.map((h) => <HoldingRow key={h.variant.mint} h={h} />)}
+                {shown.map((h) => <HoldingRow key={h.variant.mint} h={h} canTrade={mine} />)}
                 {p.cash.filter((c) => (c.valueUsd ?? 0) > 0.5).map((c) => (
                   <div key={c.mint} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-5 py-3 md:grid-cols-[minmax(0,1fr)_100px_120px_110px_76px]" style={{ borderTop: "1px solid var(--hairline)" }}>
                     <div className="flex items-center gap-3">
@@ -246,28 +248,49 @@ function sellLabel(h: Holding): { text: string; tone: string } {
   return { text: `${loss.toFixed(loss >= 10 ? 1 : 2)}%`, tone: loss >= 10 ? "var(--danger)" : loss >= 1 ? "var(--grade-c)" : "var(--grade-a)" };
 }
 
-function HoldingRow({ h }: { h: Holding }) {
+function optionOf(v: Variant): TokenOption {
+  return {
+    mint: v.mint, symbol: v.symbol, issuer: v.issuer, grade: v.score.grade, score: v.score.score,
+    routable: v.score.routable, notRoutableReason: v.score.notRoutableReason, liquidityUsd: v.liquidityUsd,
+    priceUsd: v.priceUsd, speculative: v.score.instrument.speculative, instrumentSummary: v.score.instrument.summary,
+  };
+}
+
+function HoldingRow({ h, canTrade }: { h: Holding; canTrade: boolean }) {
   const flagged = needsAttention(h);
   const sell = sellLabel(h);
   const spec = h.variant.score.instrument.speculative;
   const units = h.amount >= 100 ? count(Math.round(h.amount)) : h.amount.toLocaleString("en-US", { maximumFractionDigits: 3 });
+  const better = h.betterVariant;
+  const canMove = canTrade && better && better.score.routable && h.rawAmount && h.rawAmount !== "0" && h.decimals != null;
   return (
-    <Link
-      href={`/asset/${encodeURIComponent(h.asset.assetId)}`}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-3 transition-colors hover:bg-[var(--canvas)] md:grid-cols-[minmax(0,1fr)_100px_120px_110px_76px]"
-      style={{ borderTop: "1px solid var(--hairline)" }}
+    <div
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-3 md:grid-cols-[minmax(0,1fr)_100px_120px_110px_76px]"
+      style={{ borderTop: "1px solid var(--hairline)", background: flagged ? "color-mix(in srgb, var(--danger-bg) 45%, transparent)" : undefined }}
     >
       <div className="flex min-w-0 items-center gap-3">
         <AssetLogo src={h.variant.logoURI} name={h.asset.name} size={36} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
-            <span className="truncate text-[13px] font-semibold">{h.asset.name}</span>
+            <Link href={`/asset/${encodeURIComponent(h.asset.assetId)}`} className="truncate text-[13px] font-semibold hover:underline">{h.asset.name}</Link>
             {spec && <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ color: "var(--grade-c)", background: "var(--grade-c-bg)" }}>Speculative</span>}
             {flagged && !spec && <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ color: "var(--danger)", background: "var(--danger-bg)" }}>At risk</span>}
           </div>
           <span className="truncate text-[11px]" style={{ color: "var(--ink-faint)" }}>{h.variant.symbol} · {units} units</span>
-          {h.why && flagged && <span className="truncate text-[11px]" style={{ color: "var(--danger)" }}>{h.why.headline}</span>}
+          {h.why && flagged && <span className="text-[11px]" style={{ color: "var(--danger)" }}>{h.why.headline}</span>}
           {h.valuation.stale && <span className="text-[11px]" style={{ color: "var(--grade-c)" }}>Valued at the real stock price — its own quote is stale</span>}
+          {canMove && better && (
+            <span className="mt-1">
+              <TradeTrigger
+                label={`Move to ${better.symbol} · ${better.score.grade} ${better.score.score ?? ""}`}
+                variant="inline"
+                assetName={h.asset.name}
+                options={[optionOf(better)]}
+                defaultMint={better.mint}
+                from={{ mint: h.variant.mint, symbol: h.variant.symbol, rawAmount: h.rawAmount!, decimals: h.decimals!, valueUsd: h.valueUsd }}
+              />
+            </span>
+          )}
         </div>
       </div>
       <span className="hidden md:block"><Sparkline values={h.spark} /></span>
@@ -276,7 +299,7 @@ function HoldingRow({ h }: { h: Holding }) {
       <span className="col-start-2 row-start-1 text-right md:col-auto md:row-auto">
         <GradeBadge grade={h.variant.score.grade} score={h.variant.score.score} size="sm" />
       </span>
-    </Link>
+    </div>
   );
 }
 

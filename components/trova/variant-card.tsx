@@ -109,12 +109,18 @@ export function VariantCard({
             {s.advisory.reason ? ` — ${s.advisory.reason}` : ""}
           </div>
         )}
-        <p className="text-[12px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>
-            {s.instrument.label}.
-          </span>{" "}
-          {s.instrument.summary}
-        </p>
+        {variant.explanation && (
+          <p className="text-[13px] font-semibold leading-snug">{variant.explanation.headline}</p>
+        )}
+        {/* Speculative instruments always carry the issuer's own statement (principle 3). */}
+        {(s.instrument.speculative || !variant.explanation) && (
+          <p className="text-[12px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
+            <span className="font-semibold" style={{ color: "var(--ink)" }}>
+              {s.instrument.label}.
+            </span>{" "}
+            {s.instrument.summary}
+          </p>
+        )}
         {variant.redemptionNote && (
           <p className="text-[12px] leading-relaxed" style={{ color: "var(--ink-faint)" }}>
             {variant.redemptionNote}

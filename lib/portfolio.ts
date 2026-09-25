@@ -224,6 +224,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   // Native SOL and wrapped SOL are both shown as SOL cash.
   const amounts = new Map(tokens.map((t) => [t.mint, t.amount]));
   const rawAmounts = new Map(tokens.map((t) => [t.mint, BigInt(t.rawAmount)]));
+  const decimalsByMint = new Map(tokens.map((t) => [t.mint, t.decimals]));
   amounts.set(NATIVE_SOL_MINT, (amounts.get(NATIVE_SOL_MINT) ?? 0) + solBalance);
   // Wallets can hold thousands of unrelated tokens (the xStocks issuer wallet holds 1,254; one TSLAx
   // whale holds 2,582), so the mint→asset lookup goes out in capped batches and a failed batch only
@@ -324,6 +325,8 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       betterVariant: better ? view(better) : null,
       closeCall: better ? closeCall : false,
       history: history?.get(h.mint) ?? null,
+      rawAmount: (rawAmounts.get(h.mint) ?? 0n).toString(),
+      decimals: decimalsByMint.get(h.mint) ?? null,
       why: (() => {
         const e = explain(mine.variant, mine.score, ctxFor(mine.variant), { trend: history?.get(h.mint)?.trend ?? null });
         return { headline: e.headline, holdingBack: e.holdingBack, movement: e.movement };

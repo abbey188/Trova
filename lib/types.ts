@@ -245,6 +245,9 @@ export interface Holding {
   sellNow?: { status: "ok" | "no-route" | "unavailable"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[] } | null;
   /** Daily rating history for the held variant, oldest first. */
   history?: VariantHistory | null;
+  /** Exact on-chain balance in base units (unscaled) and the mint's decimals — what a swap of the whole position needs. */
+  rawAmount?: string;
+  decimals?: number | null;
   /** Up to 90 daily closes of THIS token (not a sibling variant), oldest first — the row sparkline. */
   spark?: number[] | null;
   /** Change across `spark`, in %. Display only. */
