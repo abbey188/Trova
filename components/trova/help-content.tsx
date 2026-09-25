@@ -91,7 +91,10 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
         ))}
       </div>
       </div>
-      <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Rescored every day. Every rating updates as more information becomes public.</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <a href="/docs" onClick={onClose} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 40, padding: "0 16px", borderRadius: 11, fontSize: 13, fontWeight: 700, color: "var(--grade-a)", background: "var(--grade-a-bg)", textDecoration: "none" }}>Read the full method {Icon.chevronRight(14)}</a>
+        <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Rescored every day. Every rating updates as more information becomes public.</span>
+      </div>
     </div>
   );
 }
