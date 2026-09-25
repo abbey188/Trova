@@ -23,7 +23,7 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ ...DISPLAY, fontSize: 22, fontWeight: 700, letterSpacing: -0.4 }}>How ratings work</span>
-          <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>Two questions we ask of every token on Solana — and nothing else</span>
+          <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>The same stock exists as several tokens with different rights. We ask every one two questions — what you&apos;d own, and whether you can get out — and nothing else.</span>
         </div>
         {onClose && (
           <button type="button" onClick={onClose} aria-label="Close" style={{ marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 12, border: "none", background: "transparent", color: "var(--ink-faint)", cursor: "pointer" }}>{Icon.close()}</button>
@@ -36,7 +36,7 @@ export function HelpContent({ onClose }: { onClose?: () => void }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
         <section style={{ background: "var(--canvas)", borderRadius: 16, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ ...DISPLAY, fontSize: 17, fontWeight: 700 }}>Ownership</span>
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>Can you swap the token for the real share, and what does holding it actually entitle you to?</p>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>Can you redeem it for the real share or its cash value — and does it give you the share&apos;s full economic value, or only exposure through an SPV?</p>
           {[[70, "the redemption right"], [30, "what it entitles you to"]].map(([w, label]) => (
             <div key={label as string} style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
               <div style={{ height: 6, borderRadius: 999, background: "var(--surface)", overflow: "hidden" }}><div style={{ width: `${w}%`, height: 6, background: "var(--grade-b)" }} /></div>

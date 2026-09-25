@@ -18,9 +18,9 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Trova — know what you own",
+  title: "Trova — a credit rating for tokenized stocks",
   description:
-    "Every tokenized stock on Solana, rated on what you actually own and what it costs to get out.",
+    "The same stock exists on Solana as several tokens with very different rights. Trova rates what you'd actually own and whether you can get out — then lets you buy the soundest one and sell whenever you want.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
