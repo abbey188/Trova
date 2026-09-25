@@ -57,25 +57,31 @@ function Bars({ own, exit, onTint }: { own: number; exit: number; onTint: boolea
   );
 }
 
-function TokenCard({ v, logo, line, bad, compact }: { v: AssetVariantView; logo: string | null; line: React.ReactNode; bad: boolean; compact?: boolean }) {
+// The second card follows the live rating: red when it can't be left (not tradable, grade D, or
+// ≥10% lost on the way back out), amber when it is merely the weaker token.
+function TokenCard({ v, logo, line, bad, warn, compact }: { v: AssetVariantView; logo: string | null; line: React.ReactNode; bad: boolean; warn?: boolean; compact?: boolean }) {
+  const tint = bad ? { bg: "var(--danger-soft)", border: "1px solid var(--danger-line)", sub: "var(--danger-deep)", rule: "var(--danger-line)" }
+    : warn ? { bg: "var(--warn-soft)", border: "1px solid var(--grade-c-bg)", sub: "var(--ink-soft)", rule: "var(--grade-c-bg)" }
+    : { bg: "var(--surface)", border: "2px solid var(--grade-a)", sub: "var(--ink-faint)", rule: "var(--track)" };
   return (
-    <div style={{ background: bad ? "var(--danger-soft)" : "var(--surface)", border: bad ? "1px solid var(--danger-line)" : "2px solid var(--grade-a)", borderRadius: 16, padding: compact ? "14px 15px" : "18px 20px" }}>
+    <div style={{ background: tint.bg, border: tint.border, borderRadius: 16, padding: compact ? "14px 15px" : "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <CompanyLogoStatic src={logo} name="Tesla" id="tesla" size={40} />
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ ...D, fontSize: compact ? 15 : 17, fontWeight: 600 }}>{v.symbol}</span>
             {bad && compact && <span style={{ borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 700, color: "var(--danger)", background: "var(--danger-bg)" }}>At risk</span>}
+            {warn && compact && <span style={{ borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 700, color: "var(--grade-c)", background: "var(--surface)" }}>Weaker</span>}
           </div>
-          <span style={{ fontSize: 11, color: bad ? "var(--danger-deep)" : "var(--ink-faint)" }}>
+          <span style={{ fontSize: 11, color: tint.sub }}>
             {v.issuer} · {usd(v.liquidityUsd, { compact: true })} liquidity{compact ? "" : ` · ${count(v.holders)} holders`}
           </span>
         </div>
         <span style={{ flexGrow: 1 }} />
-        {pill(v.score.grade, v.score.score, bad, compact ? 13 : 16)}
+        {pill(v.score.grade, v.score.score, bad || !!warn, compact ? 13 : 16)}
       </div>
-      {!compact && <Bars own={v.score.ownership.score} exit={v.score.exit.score} onTint={bad} />}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: compact ? 10 : 14, paddingTop: compact ? 0 : 12, borderTop: compact ? "none" : `1px solid ${bad ? "var(--danger-line)" : "var(--track)"}` }}>
+      {!compact && <Bars own={v.score.ownership.score} exit={v.score.exit.score} onTint={bad || !!warn} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: compact ? 10 : 14, paddingTop: compact ? 0 : 12, borderTop: compact ? "none" : `1px solid ${tint.rule}` }}>
         {line}
       </div>
     </div>
@@ -122,9 +128,14 @@ export default async function Landing() {
   const goodLine = goodPct != null
     ? <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>Costs <b style={{ color: "var(--grade-a)" }}>{goodPct.toFixed(2)}%</b> to get in and back out at $500</span>
     : <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{d.good?.explanation?.headline}</span>;
-  const thinLine = thinBack != null
-    ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>Buy $500 and sell it straight back: {usd(thinBack)} returns. Same company, same chart.</span>
-    : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>{d.thin?.explanation?.headline}</span>;
+  const thinPct = d.thinTrip?.status === "ok" ? d.thinTrip.roundTripPct : null;
+  const thinBad = !!d.thin && (!d.thin.score.routable || d.thin.score.grade === "D" || (thinPct ?? 0) >= 10);
+  const thinTone = thinBad ? "var(--danger)" : "var(--grade-c)";
+  const thinLine = thinBad && thinBack != null
+    ? <span style={{ fontSize: 12, fontWeight: 700, color: thinTone }}>Buy $500 and sell it straight back: {usd(thinBack)} returns. Same company, same chart.</span>
+    : !thinBad && thinPct != null
+      ? <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>Costs <b style={{ color: thinTone }}>{thinPct.toFixed(2)}%</b> to get in and back out at $500 — same company, same chart.</span>
+      : <span style={{ fontSize: 12, fontWeight: 700, color: thinTone }}>{d.thin?.explanation?.headline}</span>;
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--surface)", color: "var(--ink)" }}>
@@ -162,7 +173,7 @@ export default async function Landing() {
             <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 12 }}>
               <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>Tesla, right now</span>
               <TokenCard v={d.good} logo={d.teslaLogo} line={goodLine} bad={false} />
-              <TokenCard v={d.thin} logo={d.teslaLogo} line={thinLine} bad />
+              <TokenCard v={d.thin} logo={d.teslaLogo} line={thinLine} bad={thinBad} warn={!thinBad} />
             </div>
           )}
         </div>
@@ -180,7 +191,7 @@ export default async function Landing() {
         {d.good && d.thin && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
             <TokenCard compact v={d.good} logo={d.teslaLogo} bad={false} line={<span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{usd(d.good.liquidityUsd, { compact: true })} depth{goodPct != null ? ` · ${goodPct.toFixed(2)}% to leave` : ""}</span>} />
-            <TokenCard compact v={d.thin} logo={d.teslaLogo} bad line={<span style={{ fontSize: 11, color: "var(--danger-deep)", fontWeight: 600 }}>{usd(d.thin.liquidityUsd, { compact: true })} depth{thinBack != null ? ` · $500 in, ${usd(thinBack)} out` : ""}</span>} />
+            <TokenCard compact v={d.thin} logo={d.teslaLogo} bad={thinBad} warn={!thinBad} line={<span style={{ fontSize: 11, color: thinBad ? "var(--danger-deep)" : "var(--ink-soft)", fontWeight: 600 }}>{usd(d.thin.liquidityUsd, { compact: true })} depth{thinBack != null ? ` · $500 in, ${usd(thinBack)} out` : ""}</span>} />
             <span style={{ fontSize: 11, color: "var(--ink-faint)", padding: "3px 4px 0" }}>Same company. Same price on the chart.</span>
           </div>
         )}

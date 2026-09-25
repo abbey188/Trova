@@ -35,7 +35,7 @@ const CASH_MINTS: Record<string, string> = {
 };
 
 // Exit cost costs two Jupiter quotes per holding, so only the largest positions are measured.
-const EXIT_QUOTED_HOLDINGS = 4;
+const EXIT_QUOTED_HOLDINGS = 6;
 // …and up to this many more that need attention, whatever their size.
 const EXIT_QUOTED_AT_RISK = 4;
 
