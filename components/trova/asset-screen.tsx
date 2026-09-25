@@ -10,7 +10,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { CompareButton, HeldCard } from "@/components/trova/asset-held";
 import { HelpButton } from "@/components/trova/frame";
-import { CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing, WhyButton } from "@/components/trova/kit";
+import { ArrowLink, CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing, WhyButton } from "@/components/trova/kit";
 import { PriceChart, RangeTabs, useRangeSeries, type RangeKey } from "@/components/trova/price-chart";
 import { isChange, signalMeta, signalTitle, signalWhy } from "@/components/trova/signal-line";
 import { SellTrigger, TradeTrigger } from "@/components/trova/trade-trigger";
@@ -505,7 +505,7 @@ function Changes({ detail }: { detail: AssetDetail }) {
       <div style={{ display: "flex", alignItems: "center" }}>
         <Label>Updates</Label>
         <span style={{ flexGrow: 1 }} />
-        <Link href="/updates" style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>See all →</Link>
+        <ArrowLink href="/updates">See all</ArrowLink>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
         {list.map((s, i) => (

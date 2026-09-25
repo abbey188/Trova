@@ -113,6 +113,15 @@ export function WhyButton({ href, grade, score, onClick }: { href: string; grade
   );
 }
 
+/** "See all ›" — any text link that leads somewhere, drawn as the same small green button as Why. */
+export function ArrowLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <Link href={href} style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 28, padding: "0 7px 0 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap", color: "var(--grade-a)", background: "var(--grade-a-bg)" }}>
+      {children}{Icon.chevronRight(13, "var(--grade-a)")}
+    </Link>
+  );
+}
+
 // ---------------------------------------------------------------------------- charts
 
 /** A row sparkline in the board's style: 1.6px stroke, green up / red down, faded when not tradable. */
@@ -139,6 +148,7 @@ export const Icon = {
   markets: (s = 19) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 5-7" /></svg>,
   updates: (s = 19) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 8v5l3 2" /></svg>,
   logo: (s = 20) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--action-ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 5-7" /></svg>,
+  sun: (s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>,
   moon: (s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>,
   bell: (s = 18) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>,
   search: (s = 15) => <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>,

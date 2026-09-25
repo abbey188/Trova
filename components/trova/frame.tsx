@@ -75,6 +75,10 @@ export function AppFrame({ active, children }: { active: Section; children: Reac
   const home = useHomeHref();
   const address = useWalletAddress();
   const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // The icon shows where a tap takes you: a sun in dark mode, a moon in light.
+  const dark = mounted && resolvedTheme === "dark";
   const [help, setHelp] = useState(false);
   const openHelp = useCallback(() => setHelp(true), []);
 
@@ -91,8 +95,8 @@ export function AppFrame({ active, children }: { active: Section; children: Reac
           <RailLink href="/updates" label="Updates" active={active === "updates"}>{Icon.updates()}</RailLink>
           <span style={{ flexGrow: 1 }} />
           <button type="button" onClick={openHelp} aria-label="How ratings work" style={{ ...DISPLAY, display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, border: "1.5px solid var(--ring-line)", background: "transparent", color: "var(--ink-soft)", fontSize: 17, fontWeight: 700, cursor: "pointer" }}>?</button>
-          <button type="button" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} aria-label="Switch theme" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, marginTop: 10, borderRadius: 11, border: "none", background: "transparent", color: "var(--ink-faint)", cursor: "pointer" }}>
-            {Icon.moon()}
+          <button type="button" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, marginTop: 10, borderRadius: 11, border: "none", background: "transparent", color: "var(--ink-faint)", cursor: "pointer" }}>
+            {dark ? Icon.sun() : Icon.moon()}
           </button>
         </nav>
 

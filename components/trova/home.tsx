@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { Avatar, HelpButton, Sheet } from "@/components/trova/frame";
-import { CompanyLogo, DISPLAY, gradeOf, GradePill, Icon, Label, NUM, Panel, Pill, ScoreRing, Spark } from "@/components/trova/kit";
+import { ArrowLink, CompanyLogo, DISPLAY, gradeOf, GradePill, Icon, Label, NUM, Panel, Pill, ScoreRing, Spark } from "@/components/trova/kit";
 import { ProfileContent } from "@/components/trova/profile";
 import { isChange, signalMeta, signalTitle } from "@/components/trova/signal-line";
 import { NamePrompt } from "@/components/trova/name-prompt";
@@ -473,7 +473,7 @@ function Activity({ signals, holdings }: { signals: Signal[]; holdings: Holding[
       <div style={{ display: "flex", alignItems: "center" }}>
         <Label>Portfolio activity</Label>
         <span style={{ flexGrow: 1 }} />
-        <Link href="/updates?f=holdings" style={{ fontSize: 11, fontWeight: 700, textDecoration: "none", color: "var(--grade-a)" }}>See all →</Link>
+        <ArrowLink href="/updates?f=holdings">See all</ArrowLink>
       </div>
       {top.length === 0 ? (
         <span style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 12 }}>Nothing has changed for your holdings.</span>

@@ -95,7 +95,7 @@ export function ProfileContent({ onClose }: { onClose?: () => void }) {
         {!address && <ConnectButton size="lg" />}
 
         <section style={{ background: "var(--surface)", borderRadius: 16, padding: "4px 0" }}>
-          <Row icon={Icon.moon(17)} trailing={<Toggle on={dark} label="Dark mode" onClick={() => setTheme(dark ? "light" : "dark")} />}>
+          <Row icon={dark ? Icon.sun(17) : Icon.moon(17)} trailing={<Toggle on={dark} label="Dark mode" onClick={() => setTheme(dark ? "light" : "dark")} />}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Dark mode</span>
           </Row>
           <Divider />
