@@ -86,14 +86,18 @@ export function better(a: GradeRow, b: GradeRow): boolean {
   return (a.score ?? -1) > (b.score ?? -1);
 }
 
+const cleanName = (name: string | undefined) => (name ?? "").replace(/\s+-\s+xStock$/i, "").trim();
+
 function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>): MarketRow {
   const m = r.market ?? r.stats ?? {};
   const g = r.assetId ? grades.get(r.assetId) : undefined;
   return {
     assetId: r.assetId ?? "",
     mint: r.mint ?? g?.mint ?? null,
-    symbol: r.symbol ?? "",
-    name: r.name ?? r.symbol ?? "",
+    // tokens.xyz's trending feed gives some xStocks the generic symbol "xStock" and a name like
+    // "GameStop - xStock". Our own snapshot knows the real ticker (GMEx); the name loses the suffix.
+    symbol: /^xstock$/i.test(r.symbol ?? "") ? g?.symbol ?? cleanName(r.name) : r.symbol ?? "",
+    name: cleanName(r.name ?? r.symbol ?? ""),
     category: r.category ?? null,
     logoUrl: r.imageUrl ?? null,
     priceUsd: num(m.price),

@@ -14,7 +14,7 @@ import { buildAssetDetail } from "@/lib/asset";
 import { count, usd } from "@/lib/format";
 import type { AssetVariantView, TrendSummary } from "@/lib/types";
 
-export const revalidate = 30;
+export const revalidate = 120;
 
 const BENEFIT_TONE: Record<string, { mark: string; fg: string; bg: string; word: string }> = {
   yes: { mark: "✓", fg: "var(--grade-a)", bg: "var(--grade-a-bg)", word: "Yes" },

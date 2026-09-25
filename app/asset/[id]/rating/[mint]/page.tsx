@@ -9,7 +9,7 @@ import { buildAssetDetail } from "@/lib/asset";
 import type { Driver } from "@/lib/explain";
 import { GRADE_CUTOFFS } from "@/lib/trust-score";
 
-export const revalidate = 30;
+export const revalidate = 120;
 
 const barTone = (v: number) => (v >= 65 ? "var(--grade-a)" : v >= 50 ? "var(--grade-c)" : "var(--danger)");
 

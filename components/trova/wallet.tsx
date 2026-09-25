@@ -77,6 +77,9 @@ export function ConnectButton({ size = "md" }: { size?: "md" | "lg" }) {
             <Link href={`/p/${address}`} onClick={() => setOpen(false)} className="rounded-[10px] px-3 py-2.5 text-[13px] font-semibold hover:bg-[var(--canvas)]">
               Your portfolio
             </Link>
+            <Link href="/profile" onClick={() => setOpen(false)} className="rounded-[10px] px-3 py-2.5 text-[13px] font-semibold hover:bg-[var(--canvas)]">
+              Name and alerts
+            </Link>
             <button
               type="button"
               onClick={() => { setOpen(false); disconnect.dispatch(); }}
