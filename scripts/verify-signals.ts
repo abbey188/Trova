@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { comparable, gapPercent } from "../lib/asset";
 import { summariseTrend } from "../lib/history";
+import { choosePrice } from "../lib/price";
 import { better, type GradeRow } from "../lib/markets";
 import type { HistoryPoint } from "../lib/types";
 import { portfolioSignals, valuePrice } from "../lib/portfolio";
@@ -390,6 +391,43 @@ check("between two routable variants the higher score wins", () => {
 
 check("an unrated variant never displaces a rated one", () => {
   assert.equal(better(GR({ score: null }), GR({ score: 30 })), false);
+});
+
+
+// --- which price is the price (lib/price.ts) ------------------------------------------------
+// OPENAI, 25 Sep: listed at $1,361 (PreStocks' reference price) while its trades closed at $1,985.
+
+const PRICE_NOW = Date.parse("2026-09-25T08:00:00Z");
+const closedAgo = (h: number) => (PRICE_NOW - h * 3_600_000) / 1000;
+
+check("a listed price its own heavy, recent trading clearly disagrees with is replaced", () => {
+  const c = choosePrice(1361, { time: closedAgo(5), close: 1985 }, 19_657, PRICE_NOW);
+  assert.equal(c.basis, "trades");
+  assert.equal(c.priceUsd, 1985);
+  assert.equal(c.listedUsd, 1361);
+  assert.ok(c.gapPct! > 45 && c.gapPct! < 46);
+});
+
+check("agreement within 25% keeps the listed price", () => {
+  const c = choosePrice(381.35, { time: closedAgo(5), close: 379.72 }, 29_285, PRICE_NOW);
+  assert.equal(c.basis, "listed");
+  assert.equal(c.priceUsd, 381.35);
+});
+
+check("one stray fill in a thin market can never reprice a token", () => {
+  const c = choosePrice(3125, { time: closedAgo(2), close: 14 }, 3, PRICE_NOW);
+  assert.equal(c.basis, "listed");
+});
+
+check("an old close never overrides the listed price", () => {
+  const c = choosePrice(1361, { time: closedAgo(72), close: 1985 }, 19_657, PRICE_NOW);
+  assert.equal(c.basis, "listed");
+});
+
+check("no candles leaves the listed price alone", () => {
+  const c = choosePrice(1361, null, 19_657, PRICE_NOW);
+  assert.equal(c.basis, "listed");
+  assert.equal(c.gapPct, null);
 });
 
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);
