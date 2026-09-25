@@ -25,8 +25,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${display.variable} ${body.variable} antialiased`}>
+    <html lang="en" suppressHydrationWarning className={`${display.variable} ${body.variable}`}>
+      {/* Font variables live on <html>: the body font resolves var(--font-body) at the root, and a
+          variable defined only on <body> is invisible there — the whole app fell back to system-ui. */}
+      <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

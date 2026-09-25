@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { GradeBadge } from "@/components/trova/grade-badge";
+import { CompanyLogo, GradePill, Icon } from "@/components/trova/kit";
 import { api, isAddress } from "@/lib/client";
 import type { MarketRow } from "@/lib/types";
 
 /** Search a stock by name or ticker — or paste any wallet address to look at it, read-only. */
-export function SearchBox({ className = "" }: { className?: string }) {
+export function SearchBox({ className = "", large }: { className?: string; large?: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -40,8 +40,8 @@ export function SearchBox({ className = "" }: { className?: string }) {
   return (
     <div ref={ref} className={`relative ${className}`}>
       <label htmlFor="trova-search" className="sr-only">Search a stock or paste a wallet</label>
-      <div className="flex h-10 items-center gap-2 rounded-[11px] px-3" style={{ background: "var(--canvas)" }}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+      <div className="flex items-center gap-[9px]" style={{ background: "var(--canvas)", borderRadius: large ? 13 : 11, padding: large ? "0 14px" : "0 15px", height: large ? 46 : 42, color: "var(--ink-faint)" }}>
+        {Icon.search(16)}
         <input
           id="trova-search"
           value={q}
@@ -51,9 +51,9 @@ export function SearchBox({ className = "" }: { className?: string }) {
             if (e.key === "Enter" && wallet) { setOpen(false); router.push(`/p/${wallet}`); }
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="Search a stock, or paste a wallet"
+          placeholder="Search a stock"
           autoComplete="off"
-          className="w-full bg-transparent text-[13px] outline-none placeholder:text-[var(--ink-faint)]"
+          className="w-full bg-transparent text-[13px] outline-none placeholder:text-[var(--ink-faint)]" style={{ color: "var(--ink)" }}
         />
       </div>
       {open && debounced.length >= 2 && (
@@ -78,13 +78,13 @@ export function SearchBox({ className = "" }: { className?: string }) {
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-3 rounded-[10px] px-3 py-2 hover:bg-[var(--canvas)]"
               >
-                <AssetLogo src={r.logoUrl} name={r.name} size={28} />
+                <CompanyLogo src={r.logoUrl} name={r.name} id={r.assetId} size={30} />
                 <div className="flex min-w-0 flex-col">
                   <span className="truncate text-[13px] font-semibold">{r.name}</span>
                   <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>{r.symbol}{r.speculative ? " · Speculative" : ""}</span>
                 </div>
                 <span className="ml-auto">
-                  {r.grade ? <GradeBadge grade={r.grade} score={r.score} size="sm" /> : <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>unrated</span>}
+                  {r.grade ? <GradePill grade={r.grade} score={r.score} size="sm" /> : <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>unrated</span>}
                 </span>
               </Link>
             ))
@@ -92,23 +92,5 @@ export function SearchBox({ className = "" }: { className?: string }) {
         </div>
       )}
     </div>
-  );
-}
-
-/** A token's logo, or its initial on a neutral disc when there is none (181 of 479 have one). */
-export function AssetLogo({ src, name, size = 36 }: { src?: string | null; name: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  if (src && !failed) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={src} alt="" width={size} height={size} onError={() => setFailed(true)} className="shrink-0 rounded-full object-cover" style={{ width: size, height: size, background: "var(--canvas)" }} />;
-  }
-  return (
-    <span
-      className="font-display flex shrink-0 items-center justify-center rounded-full font-bold"
-      style={{ width: size, height: size, background: "var(--canvas)", color: "var(--ink-soft)", fontSize: size * 0.4 }}
-      aria-hidden="true"
-    >
-      {name.slice(0, 1).toUpperCase()}
-    </span>
   );
 }

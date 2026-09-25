@@ -1,117 +1,190 @@
+// Landing — ported from LandingDesktop / LandingMobile on the canvas. Tagline, one line, two buttons
+// (flow map), the stock cluster, and Tesla's two tokens measured live.
+
 import { unstable_cache } from "next/cache";
 import Link from "next/link";
 
-import { ConnectedRedirect } from "@/components/trova/connected-redirect";
-import { GradeBadge } from "@/components/trova/grade-badge";
-import { SearchBox } from "@/components/trova/search";
-import { ConnectButton } from "@/components/trova/wallet";
+import { CompanyLogoStatic } from "@/components/trova/logo-static";
+import { BrowseMarkets, ConnectedRedirect, HowItWorksLink, LandingConnect } from "@/components/trova/landing-bits";
 import { buildAssetDetail } from "@/lib/asset";
 import { count, usd } from "@/lib/format";
+import { getMonitoringStats } from "@/lib/history";
 import { exitCost } from "@/lib/jupiter";
-import type { AssetVariantView } from "@/lib/types";
+import { getCompanyLogos } from "@/lib/logos";
+import type { AssetVariantView, Rating } from "@/lib/types";
 
-// Live, but not per request: Tesla's two tokens re-measured every five minutes.
 export const revalidate = 300;
 
-// Cached across visitors for five minutes, so the landing page never waits on four live quotes.
-const teslaRightNow = unstable_cache(async () => {
-  try {
-    const d = await buildAssetDetail("tesla");
-    const good = d?.variants.find((v) => v.symbol === "TSLAx");
-    const thin = d?.variants.find((v) => v.symbol === "TSLAon");
-    if (!good || !thin) return null;
-    const [goodTrip, thinTrip] = await Promise.all([exitCost(good.mint, 500), exitCost(thin.mint, 500)]);
-    return { good, thin, goodTrip, thinTrip };
-  } catch {
-    return null; // the page still works without the live example
-  }
-}, ["landing-tesla"], { revalidate: 300 });
+const CLUSTER: [string, string][] = [["tesla", "Tesla"], ["spacex", "SpaceX"], ["nvidia", "NVIDIA"], ["microsoft", "Microsoft"], ["apple", "Apple"], ["gold", "Gold"]];
 
-function TokenCard({ v, line, highlight }: { v: AssetVariantView; line: string; highlight: boolean }) {
-  const s = v.score;
+const landingData = unstable_cache(async () => {
+  const [tesla, logos, stats] = await Promise.all([
+    buildAssetDetail("tesla").catch(() => null),
+    getCompanyLogos().catch(() => new Map<string, string>()),
+    getMonitoringStats(7).catch(() => null),
+  ]);
+  const good = tesla?.variants.find((v) => v.symbol === "TSLAx") ?? null;
+  const thin = tesla?.variants.find((v) => v.symbol === "TSLAon") ?? null;
+  const [goodTrip, thinTrip] = await Promise.all([
+    good ? exitCost(good.mint, 500).catch(() => null) : null,
+    thin ? exitCost(thin.mint, 500).catch(() => null) : null,
+  ]);
+  return {
+    good, thin, goodTrip, thinTrip,
+    teslaLogo: tesla?.asset.logoUrl ?? null,
+    cluster: CLUSTER.map(([id, name]) => ({ id, name, logo: logos.get(id) ?? null })),
+    tracked: stats?.variantsTracked ?? null,
+  };
+}, ["landing-v2"], { revalidate: 300 });
+
+const D = { fontFamily: "var(--font-display), system-ui" } as const;
+const N = { ...D, fontVariantNumeric: "tabular-nums" } as const;
+
+function pill(g: Rating, score: number | null, onWhite: boolean, size = 16) {
+  const c = g === "A" ? ["var(--grade-a)", "var(--grade-a-bg)"] : g === "B" ? ["var(--grade-b)", "var(--grade-b-bg)"] : g === "C" ? ["var(--grade-c)", "var(--grade-c-bg)"] : ["var(--grade-d)", "var(--grade-d-bg)"];
+  return <span style={{ ...N, display: "inline-flex", gap: 6, borderRadius: 999, padding: size >= 16 ? "6px 14px" : "4px 11px", fontSize: size, fontWeight: 700, color: c[0], background: onWhite ? "var(--surface)" : c[1] }}>{g}{score != null && <span>{score}</span>}</span>;
+}
+
+function Bars({ own, exit, onTint }: { own: number; exit: number; onTint: boolean }) {
+  const fill = (v: number) => (v >= 65 ? "var(--grade-a)" : v >= 50 ? "var(--grade-c)" : "var(--danger)");
   return (
-    <div
-      className="flex flex-col gap-3 rounded-[18px] p-5"
-      style={{ background: "var(--surface)", border: highlight ? "2px solid var(--grade-a)" : "1px solid var(--hairline)" }}
-    >
-      <div className="flex items-center gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-display text-[17px] font-semibold">{v.symbol}</span>
-          <span className="text-[12px]" style={{ color: "var(--ink-soft)" }}>
-            {v.issuer} · {usd(v.liquidityUsd, { compact: true })} liquidity · {count(v.holders)} holders
-          </span>
-        </div>
-        <span className="ml-auto"><GradeBadge grade={s.grade} score={s.score} size="lg" /></span>
-      </div>
-      {(["ownership", "exit"] as const).map((k) => (
-        <div key={k} className="flex flex-col gap-1">
-          <div className="flex text-[12px]"><span className="font-semibold capitalize">{k}</span><span className="tabular ml-auto font-bold">{s[k].score}</span></div>
-          <div className="h-[6px] overflow-hidden rounded-full" style={{ background: "var(--canvas)" }}>
-            <div className="h-full rounded-full" style={{ width: `${s[k].score}%`, background: s[k].score >= 65 ? "var(--grade-a)" : s[k].score >= 50 ? "var(--grade-c)" : "var(--danger)" }} />
-          </div>
+    <div style={{ display: "flex", gap: 22, marginTop: 15 }}>
+      {([["Ownership", own], ["Exit", exit]] as const).map(([l, v]) => (
+        <div key={l} style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+          <div style={{ display: "flex", alignItems: "baseline" }}><span style={{ fontSize: 12, fontWeight: 600 }}>{l}</span><span style={{ flexGrow: 1 }} /><span style={{ ...N, fontSize: 12, fontWeight: 700 }}>{v}</span></div>
+          <div style={{ height: 6, borderRadius: 999, background: onTint ? "var(--surface)" : "var(--track)", overflow: "hidden" }}><div style={{ width: `${v}%`, height: 6, background: fill(v) }} /></div>
         </div>
       ))}
-      <span className="text-[13px] font-semibold" style={{ color: highlight ? "var(--grade-a)" : "var(--danger)" }}>{line}</span>
     </div>
   );
 }
 
+function TokenCard({ v, logo, line, bad, compact }: { v: AssetVariantView; logo: string | null; line: React.ReactNode; bad: boolean; compact?: boolean }) {
+  return (
+    <div style={{ background: bad ? "var(--danger-soft)" : "var(--surface)", border: bad ? "1px solid var(--danger-line)" : "2px solid var(--grade-a)", borderRadius: 16, padding: compact ? "14px 15px" : "18px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <CompanyLogoStatic src={logo} name="Tesla" id="tesla" size={40} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ ...D, fontSize: compact ? 15 : 17, fontWeight: 600 }}>{v.symbol}</span>
+            {bad && compact && <span style={{ borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 700, color: "var(--danger)", background: "var(--danger-bg)" }}>At risk</span>}
+          </div>
+          <span style={{ fontSize: 11, color: bad ? "var(--danger-deep)" : "var(--ink-faint)" }}>
+            {v.issuer} · {usd(v.liquidityUsd, { compact: true })} liquidity{compact ? "" : ` · ${count(v.holders)} holders`}
+          </span>
+        </div>
+        <span style={{ flexGrow: 1 }} />
+        {pill(v.score.grade, v.score.score, bad, compact ? 13 : 16)}
+      </div>
+      {!compact && <Bars own={v.score.ownership.score} exit={v.score.exit.score} onTint={bad} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: compact ? 10 : 14, paddingTop: compact ? 0 : 12, borderTop: compact ? "none" : `1px solid ${bad ? "var(--danger-line)" : "var(--track)"}` }}>
+        {line}
+      </div>
+    </div>
+  );
+}
+
+function Cluster({ items, more, size }: { items: { id: string; name: string; logo: string | null }[]; more: number | null; size: number }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center" }}>
+      {items.map((c, i) => (
+        <span key={c.id} style={{ marginLeft: i === 0 ? 0 : -Math.round(size * 0.29), borderRadius: 999, border: "3px solid var(--surface)", display: "flex" }}>
+          <CompanyLogoStatic src={c.logo} name={c.name} id={c.id} size={size - 6} />
+        </span>
+      ))}
+      {more != null && more > 0 && (
+        <span style={{ ...D, marginLeft: -Math.round(size * 0.29), display: "flex", alignItems: "center", justifyContent: "center", width: size, height: size, borderRadius: 999, background: "var(--track)", color: "var(--ink-soft)", fontSize: Math.round(size * 0.25), fontWeight: 700, border: "3px solid var(--surface)", boxSizing: "border-box" }}>
+          +{more}
+        </span>
+      )}
+    </div>
+  );
+}
+
+const lockIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
+const logoMark = (s: number) => (
+  <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: s, height: s, borderRadius: s * 0.3, background: "var(--action)" }}>
+    <svg width={s * 0.53} height={s * 0.53} viewBox="0 0 24 24" fill="none" stroke="var(--action-ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 5-7" /></svg>
+  </span>
+);
+
 export default async function Landing() {
-  const tesla = await teslaRightNow();
-  const trip = (t: Awaited<ReturnType<typeof exitCost>>) =>
-    t.status === "ok" && t.roundTripPct != null ? 500 * (1 - t.roundTripPct / 100) : null;
+  const d = await landingData();
+  const back = (t: typeof d.goodTrip) => (t && t.status === "ok" && t.roundTripPct != null ? 500 * (1 - t.roundTripPct / 100) : null);
+  const goodPct = d.goodTrip?.status === "ok" ? d.goodTrip.roundTripPct : null;
+  const thinBack = back(d.thinTrip);
+  const more = d.tracked != null ? d.tracked - d.cluster.length : null;
+
+  const goodLine = goodPct != null
+    ? <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>Costs <b style={{ color: "var(--grade-a)" }}>{goodPct.toFixed(2)}%</b> to get in and back out at $500</span>
+    : <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{d.good?.explanation?.headline}</span>;
+  const thinLine = thinBack != null
+    ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>Buy $500 and sell it straight back: {usd(thinBack)} returns. Same company, same chart.</span>
+    : <span style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)" }}>{d.thin?.explanation?.headline}</span>;
 
   return (
-    <div className="min-h-screen" style={{ background: "var(--canvas)" }}>
+    <div style={{ minHeight: "100vh", background: "var(--surface)", color: "var(--ink)" }}>
       <ConnectedRedirect />
-      <div className="mx-auto flex max-w-[1180px] flex-col gap-10 px-4 py-6 md:px-8 md:py-10">
-        <header className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-[12px]" style={{ background: "var(--action)" }}>
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--action-ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="M7 15l4-5 3 3 5-7" /></svg>
-          </span>
-          <span className="font-display text-[22px] font-bold tracking-tight">Trova</span>
-          <nav className="ml-auto flex items-center gap-4 text-[13px] font-semibold">
-            <Link href="/markets" style={{ color: "var(--ink-soft)" }}>Markets</Link>
-            <Link href="/help" style={{ color: "var(--ink-soft)" }}>How ratings work</Link>
-          </nav>
+
+      {/* ---------------- desktop ---------------- */}
+      <div className="hidden lg:flex" style={{ flexDirection: "column", maxWidth: 1440, margin: "0 auto", minHeight: "100vh" }}>
+        <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "26px 56px" }}>
+          {logoMark(40)}
+          <span style={{ ...D, fontSize: 26, fontWeight: 700, letterSpacing: -0.8 }}>Trova</span>
+          <span style={{ flexGrow: 1 }} />
+          <Link href="/markets" style={{ fontSize: 14, fontWeight: 600, textDecoration: "none", color: "var(--ink)", padding: "12px 18px" }}>Markets</Link>
+          <HowItWorksLink />
+          <LandingConnect />
         </header>
 
-        <div className="grid items-center gap-10 lg:grid-cols-[1fr_520px]">
-          <div className="flex flex-col gap-6">
-            <h1 className="font-display text-[44px] font-bold leading-[1.02] tracking-tight md:text-[60px]">
-              Credit ratings for<br />tokenized stocks.
-            </h1>
-            <p className="max-w-[48ch] text-[16px] leading-relaxed" style={{ color: "var(--ink-soft)" }}>
-              The same stock exists as several tokens on Solana. We rate every one on what you actually own and
-              whether you can get back out — rechecked daily, with an alert when it changes.
+        <div style={{ flexGrow: 1, display: "flex", gap: 60, padding: "40px 56px 44px" }}>
+          <div style={{ width: 560, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+            <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>Tokenized stocks on Solana</span>
+            <h1 style={{ margin: "18px 0 0", ...D, fontSize: 62, lineHeight: 1.02, fontWeight: 700, letterSpacing: -2 }}>Know what<br />you own</h1>
+            <p style={{ margin: "22px 0 0", fontSize: 16, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: "46ch" }}>
+              The same stock exists as several tokens on Solana. They look identical on a price chart. One is swappable for the real share, one owns nothing, and one cannot be sold at any size.
             </p>
-            <div className="flex max-w-[420px] flex-col gap-3">
-              <ConnectButton size="lg" />
-              <SearchBox />
-              <span className="inline-flex items-center gap-2 text-[12px]" style={{ color: "var(--ink-faint)" }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-                We only read your public address. You sign nothing to look.
-              </span>
+            <div style={{ marginTop: 30 }}><Cluster items={d.cluster} more={more} size={56} /></div>
+            <div style={{ display: "flex", gap: 12, marginTop: 30 }}>
+              <LandingConnect size="hero" />
+              <BrowseMarkets />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 22 }}>
+              {lockIcon}<span style={{ fontSize: 12, color: "var(--ink-faint)" }}>We only read your public address. You sign nothing to look.</span>
             </div>
           </div>
 
-          {tesla && (
-            <div className="flex flex-col gap-3">
-              <span className="text-[12px] font-semibold" style={{ color: "var(--ink-faint)" }}>Tesla, right now</span>
-              <TokenCard
-                v={tesla.good}
-                highlight
-                line={trip(tesla.goodTrip) != null ? `Buy $500 and sell it straight back: ${usd(trip(tesla.goodTrip))} returns.` : tesla.good.explanation?.headline ?? ""}
-              />
-              <TokenCard
-                v={tesla.thin}
-                highlight={false}
-                line={trip(tesla.thinTrip) != null ? `Buy $500 and sell it straight back: ${usd(trip(tesla.thinTrip))} returns.` : tesla.thin.explanation?.headline ?? ""}
-              />
-              <span className="text-[12px]" style={{ color: "var(--ink-faint)" }}>Same company. Same chart. Quoted through Jupiter in the last five minutes.</span>
-              <Link href="/asset/tesla" className="text-[13px] font-semibold">See why →</Link>
+          {d.good && d.thin && (
+            <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 12 }}>
+              <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>Tesla, right now</span>
+              <TokenCard v={d.good} logo={d.teslaLogo} line={goodLine} bad={false} />
+              <TokenCard v={d.thin} logo={d.teslaLogo} line={thinLine} bad />
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ---------------- mobile ---------------- */}
+      <div className="flex lg:hidden" style={{ flexDirection: "column", minHeight: "100vh", padding: "26px 22px 24px", boxSizing: "border-box" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+          {logoMark(42)}
+          <span style={{ ...D, fontSize: 25, fontWeight: 700, letterSpacing: -0.8 }}>Trova</span>
+        </div>
+        <div style={{ marginTop: 26 }}><Cluster items={d.cluster} more={more} size={52} /></div>
+        <h1 style={{ margin: "22px 0 0", ...D, fontSize: 42, lineHeight: 1.03, fontWeight: 700, letterSpacing: -1.5 }}>Know what<br />you own</h1>
+        <p style={{ margin: "13px 0 0", fontSize: 15, lineHeight: 1.55, color: "var(--ink-soft)" }}>The same stock exists as several tokens on Solana. Only some of them can be sold.</p>
+        {d.good && d.thin && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
+            <TokenCard compact v={d.good} logo={d.teslaLogo} bad={false} line={<span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{usd(d.good.liquidityUsd, { compact: true })} depth{goodPct != null ? ` · ${goodPct.toFixed(2)}% to leave` : ""}</span>} />
+            <TokenCard compact v={d.thin} logo={d.teslaLogo} bad line={<span style={{ fontSize: 11, color: "var(--danger-deep)", fontWeight: 600 }}>{usd(d.thin.liquidityUsd, { compact: true })} depth{thinBack != null ? ` · $500 in, ${usd(thinBack)} out` : ""}</span>} />
+            <span style={{ fontSize: 11, color: "var(--ink-faint)", padding: "3px 4px 0" }}>Same company. Same price on the chart.</span>
+          </div>
+        )}
+        <span style={{ flexGrow: 1, minHeight: 24 }} />
+        <LandingConnect size="lg" />
+        <div style={{ marginTop: 10 }}><BrowseMarkets full /></div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 16 }}>
+          {lockIcon}<span style={{ fontSize: 11, color: "var(--ink-faint)" }}>We only read your public address</span>
         </div>
       </div>
     </div>

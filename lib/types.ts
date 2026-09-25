@@ -228,6 +228,8 @@ export interface Asset {
   symbol: string;
   /** CUSIP where an independent source carries one (Backpack lists ~50 of 1,166); null otherwise. */
   cusip?: string | null;
+  /** A clean company logo (lib/logos.ts), or null — the UI then draws the brand disc. */
+  logoUrl?: string | null;
   assetClass: "stock" | "etf" | "metal" | "rwa" | "treasury" | "crypto" | "other";
 }
 
@@ -506,6 +508,8 @@ export interface AssetDetail {
 
 export interface PortfolioSummary {
   wallet: string;
+  /** The demo portfolio: fixed example quantities, everything else live. Always badged in the UI. */
+  demo?: boolean;
   asOf: number;
   methodVersion: string;
   totalValueUsd: number;        // tokenized holdings only (not cash)

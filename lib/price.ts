@@ -28,7 +28,8 @@ export interface PriceChoice {
 
 /**
  * @param listed    tokens.xyz's market.price
- * @param lastClose the token's own most recent candle close; `time` in unix SECONDS, as tokens.xyz returns it
+ * @param lastClose the token's own most recent close; `time` in unix SECONDS and the END of the
+ *                  candle — a candle is stamped at its start, so callers add its length
  * @param trades24h trades in the last day
  */
 export function choosePrice(

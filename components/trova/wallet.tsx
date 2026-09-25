@@ -38,7 +38,7 @@ function useOutsideClose(open: boolean, close: () => void) {
   return ref;
 }
 
-export function ConnectButton({ size = "md" }: { size?: "md" | "lg" }) {
+export function ConnectButton({ size = "md" }: { size?: "md" | "lg" | "hero" }) {
   const ready = useIsWalletReady(solanaClient);
   const wallets = useWallets(solanaClient);
   const connected = useConnectedWallet(solanaClient);
@@ -48,8 +48,9 @@ export function ConnectButton({ size = "md" }: { size?: "md" | "lg" }) {
   const ref = useOutsideClose(open, () => setOpen(false));
 
   const big = size === "lg";
-  const base = big
-    ? "h-14 w-full rounded-[15px] px-6 text-[16px]"
+  const base =
+    size === "lg" ? "h-14 w-full rounded-[15px] px-6 text-[16px]"
+    : size === "hero" ? "h-[54px] rounded-[13px] px-[30px] text-[15px]"
     : "h-10 rounded-[11px] px-4 text-[13px]";
 
   if (connected) {
@@ -94,6 +95,7 @@ export function ConnectButton({ size = "md" }: { size?: "md" | "lg" }) {
     );
   }
 
+  // While the wallet library warms up the button stays full-colour; it just isn't clickable yet.
   const busy = !ready || connect.status === "running";
   return (
     <div ref={ref} className={`relative ${big ? "w-full" : ""}`}>
@@ -101,7 +103,7 @@ export function ConnectButton({ size = "md" }: { size?: "md" | "lg" }) {
         type="button"
         disabled={busy}
         onClick={() => setOpen((v) => !v)}
-        className={`${base} inline-flex items-center justify-center gap-2 font-bold disabled:opacity-60`}
+        className={`${base} inline-flex items-center justify-center gap-2 whitespace-nowrap font-bold`}
         style={{ background: "var(--action)", color: "var(--action-ink)" }}
         aria-expanded={open}
       >

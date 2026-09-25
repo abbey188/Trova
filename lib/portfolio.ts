@@ -5,8 +5,9 @@
 
 import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
-import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
+import { getWalletTokens, NATIVE_SOL_MINT, type WalletToken } from "./helius";
 import { explain } from "./explain";
+import { getCompanyLogos } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { sellNow } from "./jupiter";
@@ -35,6 +36,8 @@ const CASH_MINTS: Record<string, string> = {
 
 // Exit cost costs two Jupiter quotes per holding, so only the largest positions are measured.
 const EXIT_QUOTED_HOLDINGS = 4;
+// …and up to this many more that need attention, whatever their size.
+const EXIT_QUOTED_AT_RISK = 4;
 
 export const CONCENTRATION_SHARE = 0.5;   // one variant ≥ 50% of tokenized holdings → concentration signal
 const MAX_LISTED = 3;                     // beyond this many same-kind signals, summarise instead of listing
@@ -78,8 +81,8 @@ const usd = (v: number) => `$${Math.round(v).toLocaleString("en-US")}`;
 const pct = (share: number) => `${Math.round(share * 100)}%`;
 const rating = (s: TrovaScore) => (s.score == null ? "NR" : `${s.grade} ${s.score}`);
 
-function assetOf(entry: UniverseEntry): Asset {
-  return { assetId: entry.asset.assetId, name: entry.asset.name, symbol: entry.asset.symbol, assetClass: entry.assetClass };
+function assetOf(entry: UniverseEntry, logos?: Map<string, string>): Asset {
+  return { assetId: entry.asset.assetId, name: entry.asset.name, symbol: entry.asset.symbol, assetClass: entry.assetClass, logoUrl: logos?.get(entry.asset.assetId) ?? null };
 }
 
 function variantView(v: TxzVariant, score: TrovaScore, assetId: string, backpackIssued: boolean): Variant {
@@ -202,14 +205,41 @@ function shareBy<K extends string>(holdings: Holding[], keys: readonly K[], keyO
   return out;
 }
 
+// The demo portfolio (flow map: "No wallet still gets the whole app, on a demo portfolio with a
+// permanent badge. Connecting swaps the data, not the layout."). Only the QUANTITIES are fixed — the
+// canvas's example holdings. Prices, ratings, what each would sell for, the charts and the changes
+// all come from the same live pipeline as a real wallet, so the demo is never a mock-up.
+export const DEMO_WALLET = "demo";
+const DEMO_HOLDINGS: { mint: string; amount: number; decimals: number }[] = [
+  { mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", amount: 12.4, decimals: 8 },  // TSLAx
+  { mint: "Xs3oZwbHvqis4NYcf4YKWmEia2eC84wSiVrcYcTqpH8", amount: 18, decimals: 8 },    // SPCXx
+  { mint: "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX", amount: 5.5, decimals: 8 },   // MSFTx
+  { mint: "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF", amount: 1.2, decimals: 9 },   // OPENAI
+  { mint: "KeGv7bsfR4MheC1CkmnAVceoApjrkvBhHYjWb67ondo", amount: 3.2, decimals: 9 },   // TSLAon
+  { mint: "Xsn3H7ACEpSF2ULxeiD6kW4jRZXpurh8ZPttyfoS56W", amount: 40, decimals: 8 },    // CLSKx
+  { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: 220, decimals: 6 },  // USDC
+];
+
+function demoTokens(): { solBalance: number; tokens: WalletToken[] } {
+  return {
+    solBalance: 0,
+    // "spl-token" so the display amounts above are taken as they are, not rescaled a second time.
+    tokens: DEMO_HOLDINGS.map((h) => ({
+      mint: h.mint, amount: h.amount, decimals: h.decimals, program: "spl-token" as const,
+      rawAmount: BigInt(Math.round(h.amount * 10 ** h.decimals)).toString(),
+    })),
+  };
+}
+
 export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> {
   const warnings: string[] = [];
   const soft = <T>(label: string, p: Promise<T>): Promise<T | null> =>
     p.catch((e) => { warnings.push(`${label} unavailable: ${message(e)}`); return null; });
   const universeErrors: { scope: string; error: string }[] = [];
+  const demo = wallet === DEMO_WALLET;
 
   const [{ solBalance, tokens: rawTokens }, universe, securities, backpackMints, referencePrices] = await Promise.all([
-    getWalletTokens(wallet),
+    demo ? Promise.resolve(demoTokens()) : getWalletTokens(wallet),
     getCuratedUniverse(universeErrors),
     soft("Backpack securities list", getSecurities()),
     soft("Backpack issuer list", getBackpackIssuedMints()),
@@ -265,6 +295,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const pythSymbols = held
     .filter((h) => h.entry.assetClass === "stock" || h.entry.assetClass === "etf")
     .map((h) => equityFeed(h.entry.asset.symbol));
+  const logosPromise = getCompanyLogos().catch(() => new Map<string, string>());
   const [change, pyth, history] = await Promise.all([
     held.length ? soft("Change history", getChangeSignals({ mints: held.map((h) => h.mint), days: 30 })) : Promise.resolve(null),
     pythSymbols.length ? soft("Pyth prices", getPythPrices(pythSymbols)) : Promise.resolve(null),
@@ -279,6 +310,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   ]);
   const historyDays = change?.historyDays ?? 0;
 
+  const logos = await logosPromise;
   const holdings: Holding[] = [];
   const tradesByMint = new Map<string, number>();
   for (const h of held) {
@@ -317,7 +349,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     tradesByMint.set(h.mint, mine.variant.market.trade24h ?? 0);
     const view = (r: RankedVariant) => variantView(r.variant, r.score, h.entry.asset.assetId, backpackMints?.has(r.variant.mint) ?? false);
     holdings.push({
-      asset: assetOf(h.entry),
+      asset: assetOf(h.entry, logos),
       variant: view(mine),
       amount: h.amount,
       valueUsd: h.amount * (valuation.priceUsd ?? 0),
@@ -356,7 +388,13 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     }
   });
 
-  const quotes = pool(holdings.slice(0, EXIT_QUOTED_HOLDINGS), 1, async (h) => {
+  // The largest positions, plus every position that needs attention: "what would selling this return"
+  // matters most exactly where a holding is at risk, so those are never left unquoted.
+  const toQuote = [...new Set([
+    ...holdings.slice(0, EXIT_QUOTED_HOLDINGS),
+    ...holdings.filter((h) => needsAttention(h.variant.score)).slice(0, EXIT_QUOTED_AT_RISK),
+  ])];
+  const quotes = pool(toQuote, 1, async (h) => {
     if (!(h.valueUsd > 0)) return;
     try {
       const raw = rawAmounts.get(h.variant.mint) ?? 0n;
@@ -385,7 +423,9 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     // price (lib/price.ts). Only for holdings priced from their own market: one already valued at
     // the real stock's price was repriced for a reason, and stays that way.
     if (h.valuation.source === "market") {
-      const choice = choosePrice(h.valuation.priceUsd, closes.at(-1), tradesByMint.get(h.variant.mint) ?? null);
+      // Daily candles are stamped at the start of their day; age them from the end.
+      const last = closes.at(-1);
+      const choice = choosePrice(h.valuation.priceUsd, last ? { time: last.time + 86_400, close: last.close } : null, tradesByMint.get(h.variant.mint) ?? null);
       if (choice.basis === "trades" && choice.priceUsd != null) {
         h.valuation = { priceUsd: choice.priceUsd, source: "trades", stale: false };
         h.valueUsd = h.amount * choice.priceUsd;
@@ -406,6 +446,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const scored = portfolioScores(holdings.map((h) => ({ valueUsd: h.valueUsd, score: h.variant.score })));
   return {
     wallet,
+    demo,
     asOf: Date.now(),
     methodVersion: METHOD_VERSION,
     totalValueUsd: holdings.reduce((s, h) => s + h.valueUsd, 0),

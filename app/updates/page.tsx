@@ -1,10 +1,12 @@
-import { Shell } from "@/components/trova/shell";
-import { UpdatesView } from "@/components/trova/updates-view";
+import { AppFrame } from "@/components/trova/frame";
+import { UpdatesScreen } from "@/components/trova/updates-screen";
+
+export const metadata = { title: "Updates · Trova" };
 
 export default function UpdatesPage() {
   return (
-    <Shell title="Updates" subtitle="What changed in the tokens we rate every day" active="updates">
-      <UpdatesView />
-    </Shell>
+    <AppFrame active="updates">
+      <UpdatesScreen />
+    </AppFrame>
   );
 }

@@ -116,48 +116,62 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* Trova — fonts and the rating palette.
-   Grades use emerald → amber; RED IS RESERVED for "you cannot get out" and advisories,
-   so it still lands when it appears. */
+/* Trova — the palette and type of the design canvas (Trova — flow and design), exactly.
+   Red is reserved for one meaning: you can't get out. */
 @theme inline {
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }
 
 :root {
-  --canvas: #edeef0;
+  --canvas: #f5f6f4;
   --surface: #ffffff;
-  --hairline: #eceDef;
+  --hairline: #e7e8e5;
+  --track: #f0f1ee;
+  --chip: #edeeeb;
+  --ring-line: #d6d9d3;
   --ink: #14161a;
   --ink-soft: #6b7280;
-  --ink-faint: #9aa0a8;
+  --ink-faint: #8a9099;
   --action: #c6f24e;
   --action-ink: #131414;
+  --avatar: #e3edde;
+  --avatar-ink: #2e7d5b;
 
   --grade-a: #0b7a55;
   --grade-a-bg: #e3f6ed;
   --grade-b: #2e7d5b;
-  --grade-b-bg: #eaf6ee;
+  --grade-b-bg: #e3edde;
   --grade-c: #a56a00;
   --grade-c-bg: #fbefd8;
   --grade-d: #b4432f;
   --grade-d-bg: #fbe9e5;
   --grade-nr: #6b7280;
-  --grade-nr-bg: #f1f2f4;
+  --grade-nr-bg: #f0f1ee;
+  --amber-bar: #f5a524;
+  --neutral-bar: #c9ccc6;
 
   --danger: #c0392b;
-  --danger-bg: #fdf0ee;
+  --danger-deep: #a8342a;
+  --danger-bg: #fbe3e1;
+  --danger-soft: #fdf1ef;
   --danger-line: #f3c9c4;
-  --track: #f0f1f3;
+  --good-soft: #f3faf6;
+  --warn-soft: #fdf8ee;
 }
 
 .dark {
-  --canvas: #0c0d0f;
+  --canvas: #0e0f11;
   --surface: #17181b;
-  --hairline: #24262b;
-  --ink: #edeef0;
-  --ink-soft: #9aa0a8;
-  --ink-faint: #7a828c;
+  --hairline: #26282d;
+  --track: #22242a;
+  --chip: #22242a;
+  --ring-line: #33363c;
+  --ink: #eef0ed;
+  --ink-soft: #a3a9b1;
+  --ink-faint: #7d848d;
+  --avatar: #1f3a2e;
+  --avatar-ink: #8fe3be;
 
   --grade-a: #34d399;
   --grade-a-bg: rgba(52, 211, 153, 0.14);
@@ -165,15 +179,19 @@
   --grade-b-bg: rgba(143, 227, 190, 0.12);
   --grade-c: #f5b544;
   --grade-c-bg: rgba(245, 181, 68, 0.14);
-  --grade-d: #f0a9a9;
-  --grade-d-bg: rgba(240, 169, 169, 0.12);
-  --grade-nr: #9aa0a8;
-  --grade-nr-bg: rgba(154, 160, 168, 0.12);
+  --grade-d: #f19a8c;
+  --grade-d-bg: rgba(241, 154, 140, 0.13);
+  --grade-nr: #a3a9b1;
+  --grade-nr-bg: rgba(163, 169, 177, 0.12);
+  --neutral-bar: #4a4e55;
 
   --danger: #f87171;
-  --danger-bg: rgba(248, 113, 113, 0.12);
-  --danger-line: rgba(248, 113, 113, 0.3);
-  --track: #24262b;
+  --danger-deep: #fca5a5;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --danger-soft: rgba(248, 113, 113, 0.08);
+  --danger-line: rgba(248, 113, 113, 0.32);
+  --good-soft: rgba(52, 211, 153, 0.08);
+  --warn-soft: rgba(245, 181, 68, 0.08);
 }
 
 @layer base {
@@ -186,7 +204,10 @@
     color: var(--ink);
     }
   html {
-    @apply font-sans;
+    font-family: var(--font-body), system-ui, sans-serif;
+    }
+  body {
+    font-family: var(--font-body), system-ui, sans-serif;
     }
 }
 

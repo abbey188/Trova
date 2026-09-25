@@ -3,6 +3,7 @@
 
 import { getBackpackIssuedMints, getExternalKlines, getExternalTickers, getSecurities, type BpKline } from "./backpack";
 import { explain } from "./explain";
+import { logoFor } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { exitLadder } from "./jupiter";
@@ -188,7 +189,13 @@ export async function buildAssetDetail(
   // The charted token's price: tokens.xyz's listed price, unless its own recent, heavy trading clearly
   // disagrees (lib/price.ts). Only the charted variant has candles in hand, so only it is checked.
   const charted = views.find((v) => v.mint === chartDaily?.mint);
-  const lastClose = chartDaily?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1) ?? null;
+  // Aged from when the candle ENDS: a daily candle is stamped at the start of its day, so measured
+  // from its start yesterday's close already looked 36h old by midday and the rule quietly switched
+  // off. The hourly series is preferred where there is one — it is the most recent trade we have.
+  const lastHourly = chartIntraday?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1);
+  const lastDaily = chartDaily?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1);
+  const lastClose = lastHourly ? { time: lastHourly.time + 3_600, close: lastHourly.close }
+    : lastDaily ? { time: lastDaily.time + 86_400, close: lastDaily.close } : null;
   const choice = charted ? choosePrice(charted.priceUsd, lastClose, rawTrades24h(ranked, charted.mint)) : null;
   if (charted && choice?.basis === "trades") {
     charted.priceUsd = choice.priceUsd ?? charted.priceUsd;
@@ -237,7 +244,7 @@ export async function buildAssetDetail(
   }
 
   return {
-    asset: { ...assetInfo, cusip: securities?.get(ticker)?.cusip ?? null },
+    asset: { ...assetInfo, cusip: securities?.get(ticker)?.cusip ?? null, logoUrl: await logoFor(assetId).catch(() => null) },
     asOf: Date.now(),
     methodVersion: METHOD_VERSION,
     stats: asset?.stats

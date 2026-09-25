@@ -1,10 +1,11 @@
-import { ProfileView } from "@/components/trova/profile-view";
-import { Shell } from "@/components/trova/shell";
+import { AppFrame } from "@/components/trova/frame";
+import { ProfileContent } from "@/components/trova/profile";
 
+// The Profile tab on mobile; on desktop the same content opens as a sheet from the avatar.
 export default function ProfilePage() {
   return (
-    <Shell title="Profile" active="profile">
-      <ProfileView />
-    </Shell>
+    <AppFrame active="profile">
+      <ProfileContent />
+    </AppFrame>
   );
 }

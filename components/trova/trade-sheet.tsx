@@ -1,20 +1,32 @@
 "use client";
 
+// The trade sheet, as the BuyMobile / BuyBlockedMobile / SwapMobile boards draw it. Three states:
+//   buy      — pick the token, pay in USDC (25% · 50% · Max of your balance), see what you get and
+//              what leaving again would cost, measured by quoting the sale straight back
+//   blocked  — the chosen token can't be left (not tradable, or ≥10% lost on the way back out):
+//              the loss in red, both halves of the rating, and the sound token of the same company
+//   swap     — move a holding into the sound token: what you hold → what you receive
+// Our server builds the unsigned transaction; the wallet signs AND sends it. It is the only step in
+// Trova that asks for a signature, and Trova never holds a key.
+
 import { getBase58Decoder, getBase64Encoder, getTransactionDecoder } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
 import { useWalletAccountTransactionSendingSigner } from "@solana/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { solanaClient } from "@/app/providers";
-import { GradeBadge } from "@/components/trova/grade-badge";
-import { ConnectButton } from "@/components/trova/wallet";
+import { useHomeHref } from "@/components/trova/frame";
+import { CompanyLogo, DISPLAY, GradePill, Icon, NUM } from "@/components/trova/kit";
+import { ConnectButton, useWalletAddress } from "@/components/trova/wallet";
 import { api } from "@/lib/client";
 import { usd } from "@/lib/format";
-import type { Rating } from "@/lib/types";
+import type { Holding, PortfolioSummary, Rating, Variant } from "@/lib/types";
 
 const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+/** Losing this much on the way back out blocks a buy until the buyer chooses to continue. */
+const BLOCK_AT_PCT = 10;
 
 export interface TokenOption {
   mint: string;
@@ -28,7 +40,27 @@ export interface TokenOption {
   priceUsd: number;
   speculative: boolean;
   instrumentSummary: string;
+  ownership?: number;
+  exit?: number;
 }
+
+/** "From" for a swap out of a token the wallet already holds; absent for a buy with USDC. */
+export interface SwapFrom {
+  mint: string; symbol: string; rawAmount: string; decimals: number; valueUsd: number;
+  grade?: Rating; score?: number | null; exit?: number; liquidityUsd?: number;
+}
+
+export const toOption = (v: Variant): TokenOption => ({
+  mint: v.mint, symbol: v.symbol, issuer: v.issuer, grade: v.score.grade, score: v.score.score,
+  routable: v.score.routable, notRoutableReason: v.score.notRoutableReason, liquidityUsd: v.liquidityUsd,
+  priceUsd: v.priceUsd, speculative: v.score.instrument.speculative, instrumentSummary: v.score.instrument.summary,
+  ownership: v.score.ownership.score, exit: v.score.exit.score,
+});
+
+export const swapFromHolding = (h: Holding): SwapFrom => ({
+  mint: h.variant.mint, symbol: h.variant.symbol, rawAmount: h.rawAmount!, decimals: h.decimals!, valueUsd: h.valueUsd,
+  grade: h.variant.score.grade, score: h.variant.score.score, exit: h.variant.score.exit.score, liquidityUsd: h.variant.liquidityUsd,
+});
 
 interface Quote {
   status: "ok" | "no-route" | "unavailable";
@@ -49,39 +81,47 @@ type Phase =
   | { kind: "done"; signature: string }
   | { kind: "failed"; message: string; signature?: string };
 
-/** "From" for a swap out of a token the wallet already holds; absent for a buy with USDC. */
-export interface SwapFrom { mint: string; symbol: string; rawAmount: string; decimals: number; valueUsd: number }
+const lossTone = (pct: number | null) => (pct == null ? "var(--ink)" : pct >= BLOCK_AT_PCT ? "var(--danger)" : pct >= 1 ? "var(--grade-c)" : "var(--grade-a)");
+const fmtPct = (n: number) => `${n < 0.01 ? "<0.01" : n.toFixed(n >= 10 ? 1 : 2)}%`;
+const fmtUnits = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: n >= 100 ? 2 : 6 });
+const LABEL = { fontSize: 11, color: "var(--ink-faint)", fontWeight: 600 } as const;
 
 export function TradeSheet({
-  open,
-  onClose,
-  assetName,
-  options,
-  defaultMint,
-  from,
+  open, onClose, assetName, assetId, logoUrl, options, defaultMint, from,
 }: {
   open: boolean;
   onClose: () => void;
   assetName: string;
+  assetId?: string;
+  logoUrl?: string | null;
   options: TokenOption[];
   defaultMint: string;
   from?: SwapFrom;
 }) {
   const [mint, setMint] = useState(defaultMint);
-  const [amount, setAmount] = useState(from ? "" : "25");
+  const [amount, setAmount] = useState("500");
   const [debounced, setDebounced] = useState(amount);
   const [override, setOverride] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const connected = useConnectedWallet(solanaClient);
+  const address = useWalletAddress();
 
   useEffect(() => { setMint(defaultMint); setOverride(false); setPhase({ kind: "idle" }); }, [defaultMint, open]);
   useEffect(() => { const t = setTimeout(() => setDebounced(amount), 350); return () => clearTimeout(t); }, [amount]);
+  const busy = phase.kind === "building" || phase.kind === "signing" || phase.kind === "sent";
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && phase.kind !== "signing") onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, phase.kind]);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [open, onClose, busy]);
+
+  // The connected wallet's USDC, for "Balance" and the 25% · 50% · Max chips. Reading it needs only
+  // the public address — the same portfolio query Home already made.
+  const portfolio = useQuery({ queryKey: ["portfolio", address], queryFn: () => api<PortfolioSummary>(`/api/portfolio?wallet=${address}`), enabled: open && !!address && !from, staleTime: 60_000 });
+  const usdcBalance = portfolio.data?.cash.find((c) => c.mint === USDC)?.amount ?? null;
 
   const target = options.find((o) => o.mint === mint) ?? options[0];
   const best = options.filter((o) => o.routable).sort((a, b) => (b.score ?? -1) - (a.score ?? -1))[0];
@@ -99,124 +139,260 @@ export function TradeSheet({
   if (!open || !target) return null;
 
   const q = quote.data;
+  const pay = Number(debounced) || 0;
   const outValue = q?.outUi != null ? q.outUi * target.priceUsd : null;
   const leaveLoss = q?.leaveAgain?.roundTripPct ?? null;
   const swapLoss = from && outValue != null && from.valueUsd > 0 ? Math.max(0, (1 - outValue / from.valueUsd) * 100) : null;
-  const blocked = !from && !override && (!target.routable || (leaveLoss != null && leaveLoss >= 10));
-  const busy = phase.kind === "building" || phase.kind === "signing" || phase.kind === "sent";
+  const blocked = !from && !override && (!target.routable || (leaveLoss != null && leaveLoss >= BLOCK_AT_PCT));
+  const alt = best && best.mint !== target.mint ? best : null;
+  const quoting = quote.isPending && quote.fetchStatus !== "idle";
+  const logo = (size: number) => <CompanyLogo src={logoUrl} name={assetName} id={assetId} size={size} />;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center md:items-center" role="dialog" aria-modal="true" aria-label={from ? `Move out of ${from.symbol}` : `Buy ${assetName}`}>
-      <button type="button" aria-label="Close" className="absolute inset-0 cursor-default" style={{ background: "rgba(20,22,26,0.45)" }} onClick={() => !busy && onClose()} />
-      <div className="relative flex max-h-[92vh] w-full max-w-[460px] flex-col gap-4 overflow-auto rounded-t-[24px] p-5 md:rounded-[22px]" style={{ background: "var(--surface)" }}>
-        <div className="flex items-center gap-3">
-          <div className="flex flex-col">
-            <span className="font-display text-[18px] font-semibold">{from ? `Move out of ${from.symbol}` : `Buy ${assetName}`}</span>
-            <span className="text-[12px]" style={{ color: "var(--ink-faint)" }}>
-              {from ? "Same company, a token you can leave" : `${options.length} token${options.length === 1 ? "" : "s"} track this company`}
-            </span>
+  const title = from ? `Move out of ${from.symbol}` : blocked ? `Buy ${target.symbol}` : `Buy ${assetName}`;
+  const subtitle = from ? "Same company, a token you can leave"
+    : blocked ? `${target.issuer} · one of ${options.length} ${assetName} token${options.length === 1 ? "" : "s"}`
+    : `${options.length} token${options.length === 1 ? "" : "s"} track${options.length === 1 ? "s" : ""} this company`;
+
+  // ------------------------------------------------------------------------------------------- the action
+  const action = (label: string, note: string): ReactNode =>
+    !connected ? (
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        <ConnectButton size="lg" />
+        <span style={{ textAlign: "center", fontSize: 11, color: "var(--ink-faint)" }}>Connect to trade. Looking never needs a signature.</span>
+      </div>
+    ) : connected.signer == null ? (
+      <span style={{ fontSize: 12, color: "var(--danger)" }}>This wallet is read-only here, so it can&apos;t sign a trade.</span>
+    ) : (
+      <SendButton account={connected.account} disabled={q?.status !== "ok" || busy} phase={phase} setPhase={setPhase} label={label} note={note}
+        request={{ inputMint, outputMint: target.mint, amount: rawIn ?? "0", slippageBps: from ? 100 : 50 }} />
+    );
+
+  let body: ReactNode;
+  let footer: ReactNode;
+
+  if (phase.kind === "done" || phase.kind === "sent") {
+    body = <Result phase={phase} symbol={target.symbol} onClose={onClose} />;
+    footer = null;
+  } else if (from) {
+    // ----------------------------------------------------------------------------------------- swap
+    const fromBad = (from.exit ?? 100) < 50;
+    body = (
+      <>
+        <div style={{ background: fromBad ? "var(--danger-soft)" : "var(--canvas)", border: `1px solid ${fromBad ? "var(--danger-line)" : "var(--hairline)"}`, borderRadius: 17, padding: "15px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, color: fromBad ? "var(--danger-deep)" : "var(--ink-faint)", fontWeight: 700 }}>You hold</span>
+            <span style={{ flexGrow: 1 }} />
+            {from.grade && <GradePill grade={from.grade} score={from.score ?? null} size="sm" onWhite />}
           </div>
-          <button type="button" onClick={onClose} disabled={busy} aria-label="Close" className="ml-auto flex h-10 w-10 items-center justify-center rounded-[12px] disabled:opacity-40" style={{ color: "var(--ink-faint)" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 11 }}>
+            {logo(40)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ ...NUM, fontSize: 22, fontWeight: 700 }}>{fmtUnits(Number(from.rawAmount) / 10 ** from.decimals)}</span>
+              <span style={{ fontSize: 11, color: fromBad ? "var(--danger-deep)" : "var(--ink-soft)" }}>{from.symbol} · {usd(from.valueUsd)}</span>
+            </div>
+            <span style={{ flexGrow: 1 }} />
+            <span style={{ borderRadius: 9, padding: "8px 12px", fontSize: 12, fontWeight: 700, color: fromBad ? "var(--danger)" : "var(--ink-soft)", background: "var(--surface)" }}>All</span>
+          </div>
         </div>
-
-        {phase.kind === "done" || phase.kind === "sent" ? (
-          <Result phase={phase} symbol={target.symbol} onClose={onClose} />
-        ) : (
-          <>
-            <fieldset className="flex flex-col gap-2" disabled={busy}>
-              <legend className="pb-2 text-[12px] font-semibold" style={{ color: "var(--ink-faint)" }}>{from ? "Into" : "Which token"}</legend>
-              {options.map((o) => (
-                <label
-                  key={o.mint}
-                  className="flex min-h-[52px] cursor-pointer items-center gap-3 rounded-[14px] px-3.5 py-3"
-                  style={{ border: o.mint === mint ? "2px solid var(--grade-a)" : "1px solid var(--hairline)", background: o.mint === mint ? "var(--grade-a-bg)" : "transparent" }}
-                >
-                  <input type="radio" name="trova-token" checked={o.mint === mint} onChange={() => { setMint(o.mint); setOverride(false); }} className="h-4 w-4 accent-[var(--grade-a)]" />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="font-display text-[14px] font-semibold">{o.symbol}{o.speculative ? " · Speculative" : ""}</span>
-                    <span className="text-[11px]" style={{ color: o.routable ? "var(--ink-faint)" : "var(--danger)" }}>
+        <div style={{ display: "flex", justifyContent: "center", margin: "-13px 0", position: "relative", zIndex: 2 }}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 999, background: "var(--ink)", color: "var(--surface)", border: "4px solid var(--surface)" }}>{Icon.down(14)}</span>
+        </div>
+        <div style={{ background: "var(--good-soft)", border: "2px solid var(--grade-a)", borderRadius: 17, padding: "15px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, color: "var(--grade-a)", fontWeight: 700 }}>You receive</span>
+            <span style={{ flexGrow: 1 }} />
+            <GradePill grade={target.grade} score={target.score} size="sm" onWhite />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 11 }}>
+            {logo(40)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ ...NUM, fontSize: 22, fontWeight: 700 }}>{quoting ? "…" : q?.outUi != null ? fmtUnits(q.outUi) : "—"}</span>
+              <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{target.symbol}{outValue != null ? ` · ${usd(outValue)}` : ""}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <BeforeAfter label="Exit" before={from.exit != null ? String(from.exit) : "—"} after={target.exit != null ? String(target.exit) : "—"} beforeBad={fromBad} />
+          <BeforeAfter label="Cost to leave after" before="—" after={leaveLoss != null ? fmtPct(leaveLoss) : "—"} beforeBad={fromBad} afterColor={lossTone(leaveLoss)} />
+        </div>
+        <Details>
+          {q?.status === "ok" ? (
+            <>
+              <DetailRow label="Route" value={`Jupiter · ${(q.routeLabels ?? []).join(", ") || "direct"}`} />
+              {swapLoss != null && outValue != null && <DetailRow label="You lose to the swap" value={`${usd(Math.max(0, from.valueUsd - outValue))} · ${fmtPct(swapLoss)}`} />}
+              <span style={{ fontSize: 11, lineHeight: 1.45, color: "var(--ink-faint)" }}>
+                {swapLoss != null && swapLoss >= BLOCK_AT_PCT
+                  ? `${from.symbol} has ${usd(from.liquidityUsd ?? 0, { compact: true })} of depth, so any sale today gives up about ${fmtPct(swapLoss)}. Keeping it keeps the same rights, and Updates tells you if its market comes back.`
+                  : `Measured: ${from.symbol} worth ${usd(from.valueUsd)} becomes ${outValue != null ? usd(outValue) : "—"} of ${target.symbol}.`}
+              </span>
+            </>
+          ) : <QuoteState quoting={quoting} status={q?.status} symbol={target.symbol} />}
+        </Details>
+      </>
+    );
+    footer = action("Review in your wallet", "One signature");
+  } else if (blocked) {
+    // -------------------------------------------------------------------------------------- blocked
+    const back = q?.leaveAgain?.backUi ?? null;
+    body = (
+      <>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 13, background: "var(--danger-bg)", borderRadius: 18, padding: "26px 20px", textAlign: "center" }}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 54, height: 54, borderRadius: 999, background: "var(--surface)", color: "var(--danger)" }}>{Icon.lock(24)}</span>
+          <span style={{ ...DISPLAY, fontSize: 19, fontWeight: 700, color: "var(--danger)", lineHeight: 1.25 }}>
+            {quoting ? "Measuring the way back out…" : back != null ? <>{usd(pay)} in,<br />about {usd(back)} back out</> : q?.status === "no-route" ? "No route in at this size" : "You couldn't sell this back"}
+          </span>
+          <span style={{ fontSize: 12, lineHeight: 1.55, color: "var(--danger-deep)" }}>
+            {usd(target.liquidityUsd, { compact: true })} of liquidity.
+            {leaveLoss != null ? ` We quoted buying ${usd(pay)} and selling it straight back: ${fmtPct(leaveLoss)} of it is gone.` : target.notRoutableReason ? ` ${target.notRoutableReason}.` : ""}
+          </span>
+        </div>
+        {target.ownership != null && target.exit != null && (
+          <div style={{ display: "flex", gap: 10 }}>
+            <HalfBox label="Ownership" value={target.ownership} note={target.ownership >= 65 ? "the paperwork is fine" : "little you'd own"} bad={target.ownership < 50} />
+            <HalfBox label="Exit" value={target.exit} note={target.exit < 50 ? "the market is not" : "the market is fine"} bad={target.exit < 50} />
+          </div>
+        )}
+        {alt && (
+          <div style={{ background: "var(--good-soft)", border: "2px solid var(--grade-a)", borderRadius: 15, padding: "14px 15px" }}>
+            <span style={{ fontSize: 10, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--grade-a)", fontWeight: 700 }}>Same company, tradable</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 11, marginTop: 11 }}>
+              {logo(36)}
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <span style={{ ...DISPLAY, fontSize: 15, fontWeight: 600 }}>{alt.symbol}</span>
+                <span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{usd(alt.liquidityUsd, { compact: true })} liquidity · {alt.issuer}</span>
+              </div>
+              <span style={{ flexGrow: 1 }} />
+              <GradePill grade={alt.grade} score={alt.score} onWhite />
+            </div>
+          </div>
+        )}
+      </>
+    );
+    footer = (
+      <>
+        {alt && (
+          <button type="button" onClick={() => setMint(alt.mint)} style={{ width: "100%", minHeight: 54, fontSize: 16, fontWeight: 700, color: "var(--action-ink)", background: "var(--action)", border: "none", borderRadius: 15, cursor: "pointer", fontFamily: "inherit" }}>
+            Buy {alt.symbol} instead
+          </button>
+        )}
+        <button type="button" onClick={() => setOverride(true)} style={{ width: "100%", marginTop: alt ? 10 : 0, minHeight: 48, fontSize: 13, fontWeight: 600, color: "var(--ink-faint)", background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 15, cursor: "pointer", fontFamily: "inherit" }}>
+          Continue with {target.symbol} anyway
+        </button>
+      </>
+    );
+  } else {
+    // ------------------------------------------------------------------------------------------ buy
+    body = (
+      <>
+        {options.length > 1 && (
+          <fieldset disabled={busy} style={{ border: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            <legend style={{ ...LABEL, padding: "0 0 8px" }}>Which token</legend>
+            {options.map((o) => {
+              const on = o.mint === mint;
+              return (
+                <label key={o.mint} style={{ display: "flex", alignItems: "center", gap: 11, border: on ? "2px solid var(--grade-a)" : "1px solid var(--hairline)", background: on ? "var(--good-soft)" : "transparent", borderRadius: 15, padding: "13px 14px", cursor: "pointer", minHeight: 48, opacity: on || o.routable ? 1 : 0.75 }}>
+                  <input type="radio" name="trova-token" checked={on} onChange={() => { setMint(o.mint); setOverride(false); }} style={{ width: 18, height: 18, accentColor: "var(--grade-a)" }} />
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+                    <span style={{ ...DISPLAY, fontSize: 15, fontWeight: 600 }}>{o.symbol}{o.speculative ? <span style={{ fontSize: 11, color: "var(--grade-c)", fontWeight: 700 }}> · Speculative</span> : null}</span>
+                    <span style={{ fontSize: 11, color: o.routable ? "var(--ink-faint)" : "var(--danger)", fontWeight: o.routable ? 400 : 600 }}>
                       {o.issuer} · {o.routable ? `${usd(o.liquidityUsd, { compact: true })} liquidity` : o.notRoutableReason ?? "not tradable"}
                     </span>
                   </div>
-                  <span className="ml-auto"><GradeBadge grade={o.grade} score={o.score} size="sm" /></span>
+                  <span style={{ flexGrow: 1 }} />
+                  <GradePill grade={o.grade} score={o.score} />
                 </label>
-              ))}
-            </fieldset>
+              );
+            })}
+          </fieldset>
+        )}
 
-            {target.speculative && (
-              <p className="rounded-[14px] p-3.5 text-[12px] leading-relaxed" style={{ background: "var(--grade-c-bg)", color: "var(--ink)" }}>
-                <b style={{ color: "var(--grade-c)" }}>Speculative. </b>{target.instrumentSummary}
+        {target.speculative && (
+          <p style={{ margin: 0, borderRadius: 14, padding: "12px 14px", fontSize: 12, lineHeight: 1.5, background: "var(--grade-c-bg)" }}>
+            <b style={{ color: "var(--grade-c)" }}>Speculative. </b>{target.instrumentSummary} Its rating updates as information becomes public.
+          </p>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ display: "flex", alignItems: "baseline" }}>
+            <label htmlFor="trova-amount" style={LABEL}>You pay</label>
+            <span style={{ flexGrow: 1 }} />
+            {usdcBalance != null && <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>Balance {usd(usdcBalance)}</span>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--hairline)", borderRadius: 15, padding: "14px 15px" }}>
+            <input id="trova-amount" inputMode="decimal" value={amount} disabled={busy} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+              style={{ ...NUM, fontSize: 26, fontWeight: 700, border: "none", outline: "none", width: "100%", minWidth: 0, padding: 0, background: "transparent", color: "var(--ink)" }} />
+            <span style={{ background: "var(--track)", borderRadius: 11, padding: "9px 13px", fontSize: 13, fontWeight: 700 }}>USDC</span>
+          </div>
+          {usdcBalance != null && usdcBalance > 0 && (
+            <div style={{ display: "flex", gap: 7 }}>
+              {([["25%", 0.25], ["50%", 0.5], ["Max", 1]] as const).map(([l, f]) => (
+                <button key={l} type="button" disabled={busy} onClick={() => setAmount((Math.floor(usdcBalance * f * 100) / 100).toFixed(2))}
+                  style={{ flexGrow: 1, textAlign: "center", border: "1px solid var(--hairline)", borderRadius: 10, padding: "9px 0", fontSize: 12, fontWeight: 600, color: "var(--ink-soft)", background: "var(--surface)", cursor: "pointer", fontFamily: "inherit" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          )}
+          {usdcBalance != null && pay > usdcBalance && <span style={{ fontSize: 11, color: "var(--grade-c)", fontWeight: 600 }}>More than your {usd(usdcBalance)} USDC — the wallet will refuse it.</span>}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--canvas)", borderRadius: 15, padding: "15px 16px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={LABEL}>You get</span>
+            <span style={{ ...NUM, fontSize: 21, fontWeight: 700 }}>{quoting ? "…" : q?.outUi != null ? fmtUnits(q.outUi) : "—"}</span>
+          </div>
+          <span style={{ flexGrow: 1 }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{logo(30)}<span style={{ ...DISPLAY, fontSize: 14, fontWeight: 700 }}>{target.symbol}</span></div>
+        </div>
+
+        <Details>
+          {q?.status === "ok" ? (
+            <>
+              <DetailRow label="Price impact" value={`${(q.priceImpactPct ?? 0).toFixed(4)}%`} color={lossTone(q.priceImpactPct ?? 0)} />
+              <DetailRow label="Route" value={`Jupiter · ${(q.routeLabels ?? []).join(", ") || "direct"}`} />
+              <div style={{ display: "flex", alignItems: "baseline", borderTop: "1px solid var(--track)", paddingTop: 9 }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>Cost to leave again</span>
+                <span style={{ flexGrow: 1 }} />
+                <span style={{ ...NUM, fontSize: 14, fontWeight: 700, color: lossTone(leaveLoss) }}>{leaveLoss == null ? "—" : fmtPct(leaveLoss)}</span>
+              </div>
+              <span style={{ fontSize: 11, lineHeight: 1.45, color: "var(--ink-faint)" }}>
+                Measured, not estimated — we quote the sale back at this size. {usd(pay)} in, {q.leaveAgain?.backUi != null ? usd(q.leaveAgain.backUi) : "—"} out.
+              </span>
+            </>
+          ) : <QuoteState quoting={quoting} status={q?.status} symbol={target.symbol} />}
+        </Details>
+      </>
+    );
+    footer = action("Review in your wallet", "The only step that asks for a signature");
+  }
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={title} className="items-end md:items-center" style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", justifyContent: "center" }}>
+      <button type="button" aria-label="Close" onClick={() => !busy && onClose()} style={{ position: "absolute", inset: 0, background: "rgba(20,22,26,0.55)", border: "none", cursor: "default" }} />
+      <div className="rounded-t-[24px] md:rounded-[24px]" style={{ position: "relative", width: "min(440px, 100vw)", maxHeight: "94vh", overflowY: "auto", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
+        <div className="md:hidden" style={{ display: "flex", justifyContent: "center", padding: "10px 0 0" }}><span style={{ width: 38, height: 4, borderRadius: 999, background: "var(--hairline)" }} /></div>
+        <header style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px" }}>
+          {!from && logo(38)}
+          <div style={{ display: "flex", flexDirection: "column", gap: from ? 2 : 1, minWidth: 0 }}>
+            <span style={{ ...DISPLAY, fontSize: 17, fontWeight: 600 }}>{title}</span>
+            <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{subtitle}</span>
+          </div>
+          <span style={{ flexGrow: 1 }} />
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Close" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, marginRight: -6, borderRadius: 12, color: "var(--ink-faint)", background: "transparent", border: "none", cursor: "pointer", opacity: busy ? 0.4 : 1 }}>
+            {Icon.close()}
+          </button>
+        </header>
+        <div style={{ padding: "4px 18px 0", display: "flex", flexDirection: "column", gap: from ? 4 : blocked ? 14 : 12 }}>{body}</div>
+        {footer && (
+          <div style={{ padding: "14px 18px calc(26px + env(safe-area-inset-bottom, 0px))" }}>
+            {footer}
+            {phase.kind === "failed" && (
+              <p style={{ margin: "10px 0 0", fontSize: 12, color: "var(--danger)" }}>
+                {phase.message}
+                {phase.signature && <> · <a href={`https://solscan.io/tx/${phase.signature}`} target="_blank" rel="noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>View on Solscan</a></>}
               </p>
             )}
-
-            {from ? (
-              <div className="flex items-center gap-3 rounded-[14px] p-4" style={{ background: "var(--canvas)" }}>
-                <div className="flex flex-col">
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--ink-faint)" }}>You give</span>
-                  <span className="font-display tabular text-[18px] font-bold">{Number(from.rawAmount) / 10 ** from.decimals} {from.symbol}</span>
-                </div>
-                <span className="ml-auto tabular text-[13px]" style={{ color: "var(--ink-soft)" }}>{usd(from.valueUsd)}</span>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <label htmlFor="trova-amount" className="text-[12px] font-semibold" style={{ color: "var(--ink-faint)" }}>You pay</label>
-                <div className="flex items-center gap-3 rounded-[14px] px-4 py-3" style={{ border: "1px solid var(--hairline)" }}>
-                  <input
-                    id="trova-amount"
-                    inputMode="decimal"
-                    value={amount}
-                    disabled={busy}
-                    onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                    className="font-display tabular w-full bg-transparent text-[26px] font-bold outline-none"
-                  />
-                  <span className="rounded-[10px] px-3 py-2 text-[13px] font-bold" style={{ background: "var(--canvas)" }}>USDC</span>
-                </div>
-              </div>
-            )}
-
-            <QuoteBox quote={quote.isFetching && !q ? null : q} loading={quote.isPending && quote.fetchStatus !== "idle"} target={target} from={from} outValue={outValue} leaveLoss={leaveLoss} swapLoss={swapLoss} pay={Number(debounced) || 0} />
-
-            {blocked && best && best.mint !== target.mint ? (
-              <div className="flex flex-col gap-3 rounded-[16px] p-4" style={{ background: "var(--danger-bg)", border: "1px solid var(--danger-line)" }}>
-                <span className="font-display text-[16px] font-bold" style={{ color: "var(--danger)" }}>
-                  {leaveLoss != null ? `${usd(Number(debounced) || 0)} in, about ${usd((Number(debounced) || 0) * (1 - leaveLoss / 100))} back out` : "You couldn't sell this back"}
-                </span>
-                <span className="text-[12px]" style={{ color: "var(--ink-soft)" }}>
-                  {usd(target.liquidityUsd, { compact: true })} of liquidity. {best.symbol} tracks the same company and is rated {best.grade} {best.score}.
-                </span>
-                <button type="button" onClick={() => setMint(best.mint)} className="h-12 rounded-[14px] text-[15px] font-bold" style={{ background: "var(--action)", color: "var(--action-ink)" }}>
-                  Buy {best.symbol} instead
-                </button>
-                <button type="button" onClick={() => setOverride(true)} className="h-11 rounded-[14px] text-[13px] font-semibold" style={{ border: "1px solid var(--hairline)", color: "var(--ink-soft)", background: "var(--surface)" }}>
-                  Continue with {target.symbol} anyway
-                </button>
-              </div>
-            ) : !connected ? (
-              <div className="flex flex-col gap-2">
-                <ConnectButton size="lg" />
-                <span className="text-center text-[11px]" style={{ color: "var(--ink-faint)" }}>Connect to trade. Looking never needs a signature.</span>
-              </div>
-            ) : connected.signer == null ? (
-              <span className="text-[12px]" style={{ color: "var(--danger)" }}>This wallet is read-only here, so it can&apos;t sign a trade.</span>
-            ) : (
-              <SendButton
-                account={connected.account}
-                disabled={q?.status !== "ok" || busy}
-                phase={phase}
-                setPhase={setPhase}
-                request={{ inputMint, outputMint: target.mint, amount: rawIn ?? "0", slippageBps: from ? 100 : 50 }}
-              />
-            )}
-
-            {phase.kind === "failed" && (
-              <span className="text-[12px]" style={{ color: "var(--danger)" }}>
-                {phase.message}
-                {phase.signature && <> · <a href={`https://solscan.io/tx/${phase.signature}`} target="_blank" rel="noreferrer" className="underline">View on Solscan</a></>}
-              </span>
-            )}
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -229,49 +405,50 @@ function toRaw(ui: string, decimals: number): string | null {
   return BigInt(Math.floor(n * 10 ** decimals)).toString();
 }
 
-function QuoteBox({ quote, loading, target, from, outValue, leaveLoss, swapLoss, pay }: {
-  quote: Quote | null | undefined; loading: boolean; target: TokenOption; from?: SwapFrom;
-  outValue: number | null; leaveLoss: number | null; swapLoss: number | null; pay: number;
-}) {
-  if (loading) return <div className="h-[132px] animate-pulse rounded-[14px]" style={{ background: "var(--canvas)" }} />;
-  if (!quote) return null;
-  if (quote.status !== "ok") {
-    return (
-      <div className="rounded-[14px] p-4 text-[13px]" style={{ background: "var(--canvas)", color: quote.status === "no-route" ? "var(--danger)" : "var(--ink-soft)" }}>
-        {quote.status === "no-route" ? `Jupiter has no route into ${target.symbol} at this size.` : "Couldn't reach Jupiter just now. Try again in a moment."}
-      </div>
-    );
-  }
-  const tone = (pct: number | null) => (pct == null ? "var(--ink)" : pct >= 10 ? "var(--danger)" : pct >= 1 ? "var(--grade-c)" : "var(--grade-a)");
+function Details({ children }: { children: ReactNode }) {
+  return <div style={{ display: "flex", flexDirection: "column", gap: 9, border: "1px solid var(--hairline)", borderRadius: 15, padding: "14px 16px", marginTop: 0 }}>{children}</div>;
+}
+
+function DetailRow({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <div className="flex flex-col gap-2.5 rounded-[14px] p-4" style={{ border: "1px solid var(--hairline)" }}>
-      <div className="flex items-baseline">
-        <span className="text-[12px]" style={{ color: "var(--ink-soft)" }}>You get</span>
-        <span className="font-display tabular ml-auto text-[18px] font-bold">{quote.outUi?.toLocaleString("en-US", { maximumFractionDigits: 6 })} {target.symbol}</span>
-      </div>
-      {outValue != null && <Row label="Worth about" value={usd(outValue)} />}
-      <Row label="Price impact" value={`${(quote.priceImpactPct ?? 0).toFixed(4)}%`} />
-      <Row label="Route" value={`Jupiter · ${(quote.routeLabels ?? []).join(", ") || "direct"}`} />
-      <div className="flex items-baseline pt-2" style={{ borderTop: "1px solid var(--hairline)" }}>
-        <span className="text-[13px] font-bold">{from ? "You give up" : "Cost to leave again"}</span>
-        <span className="font-display tabular ml-auto text-[15px] font-bold" style={{ color: tone(from ? swapLoss : leaveLoss) }}>
-          {from ? (swapLoss == null ? "—" : `${swapLoss.toFixed(2)}%`) : leaveLoss == null ? "—" : `${leaveLoss.toFixed(2)}%`}
-        </span>
-      </div>
-      <span className="text-[11px]" style={{ color: "var(--ink-faint)" }}>
-        {from
-          ? `Measured: ${from.symbol} worth ${usd(from.valueUsd)} becomes ${outValue != null ? usd(outValue) : "—"} of ${target.symbol}.`
-          : `Measured, not estimated — we quote the sale straight back. ${usd(pay)} in, ${quote.leaveAgain?.backUi != null ? usd(quote.leaveAgain.backUi) : "—"} out.`}
-      </span>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <span style={{ fontSize: 12, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ flexGrow: 1 }} />
+      <span style={{ ...NUM, fontSize: 12, fontWeight: 700, color, textAlign: "right" }}>{value}</span>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function QuoteState({ quoting, status, symbol }: { quoting: boolean; status?: Quote["status"]; symbol: string }) {
+  if (quoting || !status) return <div className="animate-pulse" style={{ height: 64, borderRadius: 10, background: "var(--track)" }} />;
   return (
-    <div className="flex items-baseline text-[12px]">
-      <span style={{ color: "var(--ink-soft)" }}>{label}</span>
-      <span className="tabular ml-auto font-semibold">{value}</span>
+    <span style={{ fontSize: 13, color: status === "no-route" ? "var(--danger)" : "var(--ink-soft)" }}>
+      {status === "no-route" ? `Jupiter has no route into ${symbol} at this size.` : "Couldn't reach Jupiter just now. Try again in a moment."}
+    </span>
+  );
+}
+
+function HalfBox({ label, value, note, bad }: { label: string; value: number; note: string; bad: boolean }) {
+  const fill = value >= 80 ? "var(--grade-a)" : value >= 65 ? "var(--grade-b)" : value >= 50 ? "var(--grade-c)" : "var(--danger)";
+  return (
+    <div style={{ flex: 1, border: `1px solid ${bad ? "var(--danger-line)" : "var(--hairline)"}`, borderRadius: 14, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 600 }}>{label}</span>
+      <span style={{ ...NUM, fontSize: 19, fontWeight: 700, color: bad ? "var(--danger)" : undefined }}>{value}</span>
+      <div style={{ height: 5, borderRadius: 999, background: "var(--track)", overflow: "hidden" }}><div style={{ width: `${value}%`, height: 5, background: fill }} /></div>
+      <span style={{ fontSize: 10, color: bad ? "var(--danger)" : "var(--ink-faint)", fontWeight: bad ? 600 : 400 }}>{note}</span>
+    </div>
+  );
+}
+
+function BeforeAfter({ label, before, after, beforeBad, afterColor = "var(--grade-a)" }: { label: string; before: string; after: string; beforeBad: boolean; afterColor?: string }) {
+  return (
+    <div style={{ flex: 1, border: "1px solid var(--hairline)", borderRadius: 14, padding: "12px 13px", display: "flex", flexDirection: "column", gap: 5 }}>
+      <span style={{ fontSize: 10, color: "var(--ink-faint)", fontWeight: 600 }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+        <span style={{ ...NUM, fontSize: 17, fontWeight: 700, color: beforeBad ? "var(--danger)" : "var(--ink)" }}>{before}</span>
+        <span style={{ color: "var(--ink-faint)", display: "flex", alignSelf: "center" }}>{Icon.chevronRight(13)}</span>
+        <span style={{ ...NUM, fontSize: 17, fontWeight: 700, color: afterColor }}>{after}</span>
+      </div>
     </div>
   );
 }
@@ -281,12 +458,14 @@ function Row({ label, value }: { label: string; value: string }) {
  * to sign AND send, then watches the signature until the chain answers. Trova never holds a key or
  * a signed transaction.
  */
-function SendButton({ account, disabled, phase, setPhase, request }: {
+function SendButton({ account, disabled, phase, setPhase, request, label, note }: {
   account: NonNullable<ReturnType<typeof useConnectedWallet>>["account"];
   disabled: boolean;
   phase: Phase;
   setPhase: (p: Phase) => void;
   request: { inputMint: string; outputMint: string; amount: string; slippageBps: number };
+  label: string;
+  note: string;
 }) {
   const signer = useWalletAccountTransactionSendingSigner(account, "solana:mainnet");
 
@@ -315,40 +494,35 @@ function SendButton({ account, disabled, phase, setPhase, request }: {
     }
   }
 
-  const label =
-    phase.kind === "building" ? "Preparing the trade…"
-    : phase.kind === "signing" ? "Confirm in your wallet…"
-    : "Review in your wallet";
+  const text = phase.kind === "building" ? "Preparing the trade…" : phase.kind === "signing" ? "Confirm in your wallet…" : label;
   return (
-    <div className="flex flex-col gap-2">
-      <button type="button" onClick={go} disabled={disabled} className="h-14 rounded-[15px] text-[16px] font-bold disabled:opacity-50" style={{ background: "var(--action)", color: "var(--action-ink)" }}>
-        {label}
+    <>
+      <button type="button" onClick={go} disabled={disabled}
+        style={{ width: "100%", minHeight: 54, fontSize: 16, fontWeight: 700, color: "var(--action-ink)", background: "var(--action)", border: "none", borderRadius: 15, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1, fontFamily: "inherit" }}>
+        {text}
       </button>
-      <span className="inline-flex items-center justify-center gap-2 text-[11px]" style={{ color: "var(--ink-faint)" }}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-        The only step that asks for a signature
-      </span>
-    </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 11, color: "var(--ink-faint)" }}>
+        {Icon.lock(12)}
+        <span style={{ fontSize: 11 }}>{note}</span>
+      </div>
+    </>
   );
 }
 
 function Result({ phase, symbol, onClose }: { phase: Extract<Phase, { kind: "sent" | "done" }>; symbol: string; onClose: () => void }) {
+  const home = useHomeHref();
   const done = phase.kind === "done";
   return (
-    <div className="flex flex-col items-center gap-3 py-4 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: done ? "var(--grade-a-bg)" : "var(--canvas)" }}>
-        {done ? (
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--grade-a)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-        ) : (
-          <span className="h-6 w-6 animate-spin rounded-full border-2" style={{ borderColor: "var(--hairline)", borderTopColor: "var(--ink)" }} />
-        )}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "16px 0 30px", textAlign: "center" }}>
+      <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 56, height: 56, borderRadius: 999, background: done ? "var(--grade-a-bg)" : "var(--canvas)", color: "var(--grade-a)" }}>
+        {done ? Icon.check(24) : <span className="animate-spin" style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--hairline)", borderTopColor: "var(--ink)" }} />}
       </span>
-      <span className="font-display text-[18px] font-bold">{done ? `You own ${symbol}` : "Sent — waiting for the chain"}</span>
-      <a href={`https://solscan.io/tx/${phase.signature}`} target="_blank" rel="noreferrer" className="text-[12px] font-semibold underline">View on Solscan</a>
+      <span style={{ ...DISPLAY, fontSize: 18, fontWeight: 700 }}>{done ? `You own ${symbol}` : "Sent — waiting for the chain"}</span>
+      <a href={`https://solscan.io/tx/${phase.signature}`} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-soft)", textDecoration: "underline" }}>View on Solscan</a>
       {done && (
-        <div className="flex gap-2 pt-2">
-          <Link href="/" className="h-11 rounded-[12px] px-4 py-3 text-[13px] font-bold" style={{ background: "var(--action)", color: "var(--action-ink)" }}>See your portfolio</Link>
-          <button type="button" onClick={onClose} className="h-11 rounded-[12px] px-4 text-[13px] font-semibold" style={{ border: "1px solid var(--hairline)" }}>Close</button>
+        <div style={{ display: "flex", gap: 8, paddingTop: 6 }}>
+          <Link href={home} onClick={onClose} style={{ display: "inline-flex", alignItems: "center", height: 44, padding: "0 16px", borderRadius: 12, fontSize: 13, fontWeight: 700, background: "var(--action)", color: "var(--action-ink)", textDecoration: "none" }}>See your portfolio</Link>
+          <button type="button" onClick={onClose} style={{ height: 44, padding: "0 16px", borderRadius: 12, fontSize: 13, fontWeight: 600, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", cursor: "pointer", fontFamily: "inherit" }}>Close</button>
         </div>
       )}
     </div>

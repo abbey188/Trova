@@ -1,15 +1,16 @@
 import { notFound } from "next/navigation";
 
-import { PortfolioView } from "@/components/trova/portfolio-view";
-import { Shell } from "@/components/trova/shell";
+import { AppFrame } from "@/components/trova/frame";
+import { HomeScreen } from "@/components/trova/home";
 import { isSolanaAddress } from "@/lib/helius";
 
-export default async function PortfolioPage({ params }: { params: Promise<{ address: string }> }) {
+// /p/<wallet> is Home for that wallet; /p/demo is the demo portfolio shown before a wallet connects.
+export default async function HomePage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  if (!isSolanaAddress(address)) notFound();
+  if (address !== "demo" && !isSolanaAddress(address)) notFound();
   return (
-    <Shell title="Home" active="home">
-      <PortfolioView address={address} />
-    </Shell>
+    <AppFrame active="home">
+      <HomeScreen address={address} />
+    </AppFrame>
   );
 }

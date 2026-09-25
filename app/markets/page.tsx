@@ -1,10 +1,12 @@
-import { MarketsView } from "@/components/trova/markets-view";
-import { Shell } from "@/components/trova/shell";
+import { AppFrame } from "@/components/trova/frame";
+import { MarketsScreen } from "@/components/trova/markets-screen";
+
+export const metadata = { title: "Markets · Trova" };
 
 export default function MarketsPage() {
   return (
-    <Shell title="Markets" subtitle="Every tokenized stock, ETF and metal on Solana, rated" active="markets">
-      <MarketsView />
-    </Shell>
+    <AppFrame active="markets">
+      <MarketsScreen />
+    </AppFrame>
   );
 }

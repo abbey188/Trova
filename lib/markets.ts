@@ -8,6 +8,7 @@
 // Rows whose mint was never snapshotted come back with grade null — unrated, and labelled as such.
 // A missing grade must never render as a bad one.
 
+import { getCompanyLogos, isCleanLogo } from "./logos";
 import { selectRows } from "./supabase-rest";
 import { getAsset, getCurated, getTrending, searchAssets, type CuratedList } from "./tokens-xyz";
 import type { MarketRow, MarketsOverview, Rating } from "./types";
@@ -88,7 +89,7 @@ export function better(a: GradeRow, b: GradeRow): boolean {
 
 const cleanName = (name: string | undefined) => (name ?? "").replace(/\s+-\s+xStock$/i, "").trim();
 
-function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>): MarketRow {
+function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>, logos?: Map<string, string>): MarketRow {
   const m = r.market ?? r.stats ?? {};
   const g = r.assetId ? grades.get(r.assetId) : undefined;
   return {
@@ -99,7 +100,8 @@ function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>):
     symbol: /^xstock$/i.test(r.symbol ?? "") ? g?.symbol ?? cleanName(r.name) : r.symbol ?? "",
     name: cleanName(r.name ?? r.symbol ?? ""),
     category: r.category ?? null,
-    logoUrl: r.imageUrl ?? null,
+    // Company logos only: the trending feed's token icons carry the issuer's pattern and look muddy.
+    logoUrl: (r.assetId ? logos?.get(r.assetId) : undefined) ?? (isCleanLogo(r.imageUrl) ? r.imageUrl : null),
     priceUsd: num(m.price),
     liquidityUsd: num(m.liquidity),
     volume24hUsd: num(m.volume24hUSD),
@@ -116,8 +118,8 @@ function toRow(r: TxzRow, grades: Map<string, GradeRow & { mints?: string[] }>):
 }
 
 async function decorate(rows: TxzRow[]): Promise<MarketRow[]> {
-  const grades = await gradesFor(rows.map((r) => r.assetId ?? "").filter(Boolean));
-  return rows.filter((r) => r.assetId).map((r) => toRow(r, grades));
+  const [grades, logos] = await Promise.all([gradesFor(rows.map((r) => r.assetId ?? "").filter(Boolean)), getCompanyLogos()]);
+  return rows.filter((r) => r.assetId).map((r) => toRow(r, grades, logos));
 }
 
 /** Rows for one curated list, graded. */
@@ -161,15 +163,18 @@ export async function getMarketsOverview(lists: CuratedList[] = ["stocks", "etfs
     ...byList.flatMap((b) => b.rows.map((r) => r.assetId ?? "")),
   ].filter(Boolean));
 
-  const privateCompanies = await soft("Private companies", privateCompanyRows(), [] as MarketRow[]);
+  const [privateCompanies, logos] = await Promise.all([
+    soft("Private companies", privateCompanyRows(), [] as MarketRow[]),
+    getCompanyLogos(),
+  ]);
 
   return {
     asOf: Date.now(),
     privateCompanies,
-    trending: trendingRows.filter((r) => r.assetId).map((r) => toRow(r, grades)),
+    trending: trendingRows.filter((r) => r.assetId).map((r) => toRow(r, grades, logos)),
     lists: byList.map(({ list, rows }) => ({
       list,
-      rows: rows.filter((r) => r.assetId).map((r) => toRow(r, grades)),
+      rows: rows.filter((r) => r.assetId).map((r) => toRow(r, grades, logos)),
     })),
     warnings,
   };
@@ -201,7 +206,8 @@ export async function getAssetRows(assetIds: string[]): Promise<MarketRow[]> {
   }));
 
   const grades = await gradesFor(wanted);
-  return wanted.filter((id) => index.has(id)).map((id) => toRow(index.get(id)!, grades));
+  const logos = await getCompanyLogos();
+  return wanted.filter((id) => index.has(id)).map((id) => toRow(index.get(id)!, grades, logos));
 }
 
 /**
