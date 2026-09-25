@@ -66,10 +66,19 @@ export async function getVariants(assetId: string): Promise<TxzVariant[]> {
   return data.variants ?? [];
 }
 
-/** Canonical asset detail — includes canonicalMarket (source "prestocks" = pre-IPO, with private marks). */
+/**
+ * Canonical asset detail, including canonicalMarket (source "prestocks" = pre-IPO, with private marks).
+ * Null when tokens.xyz has no such id: a 404 is an answer ("no such asset"), not an outage, so it
+ * returns null as the signature says. Anything else still throws.
+ */
 export async function getAsset(assetId: string): Promise<TxzAsset | null> {
-  const data = await req<{ asset?: TxzAsset }>(`/assets/${encodeURIComponent(assetId)}`, { ttlMs: 5 * 60_000 });
-  return data.asset ?? null;
+  try {
+    const data = await req<{ asset?: TxzAsset }>(`/assets/${encodeURIComponent(assetId)}`, { ttlMs: 5 * 60_000 });
+    return data.asset ?? null;
+  } catch (e) {
+    if (/\b404\b/.test(e instanceof Error ? e.message : String(e))) return null;
+    throw e;
+  }
 }
 
 // --- Mint lookups (shapes validated against live responses, 2026-09-15) ---
