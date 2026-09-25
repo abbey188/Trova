@@ -240,7 +240,7 @@ function SortMenu({ sort, setSort, trigger }: { sort: Sort; setSort: (s: Sort) =
       <DropdownMenuContent align="end" style={{ minWidth: 180, background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 12, padding: 6, boxShadow: "0 12px 32px rgba(20,22,26,0.14)" }}>
         <DropdownMenuRadioGroup value={sort} onValueChange={(v) => setSort(v as Sort)}>
           {SORTS.map((o) => (
-            <DropdownMenuRadioItem key={o.key} value={o.key} style={{ fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "9px 10px", textTransform: "capitalize", cursor: "pointer" }}>
+            <DropdownMenuRadioItem key={o.key} value={o.key} style={{ fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "9px 10px", cursor: "pointer" }}>
               {o.key === "rating" ? "Rating, best first" : o.key === "liquidity" ? "Liquidity, deepest first" : "Price, highest first"}
             </DropdownMenuRadioItem>
           ))}

@@ -18,9 +18,8 @@ export const revalidate = 300;
 const CLUSTER: [string, string][] = [["tesla", "Tesla"], ["spacex", "SpaceX"], ["nvidia", "NVIDIA"], ["microsoft", "Microsoft"], ["apple", "Apple"], ["gold", "Gold"]];
 
 const landingData = unstable_cache(async () => {
-  const [tesla, logos, stats] = await Promise.all([
+  const [tesla, stats] = await Promise.all([
     buildAssetDetail("tesla").catch(() => null),
-    getCompanyLogos().catch(() => new Map<string, string>()),
     getMonitoringStats(7).catch(() => null),
   ]);
   const good = tesla?.variants.find((v) => v.symbol === "TSLAx") ?? null;
@@ -32,7 +31,6 @@ const landingData = unstable_cache(async () => {
   return {
     good, thin, goodTrip, thinTrip,
     teslaLogo: tesla?.asset.logoUrl ?? null,
-    cluster: CLUSTER.map(([id, name]) => ({ id, name, logo: logos.get(id) ?? null })),
     tracked: stats?.variantsTracked ?? null,
   };
 }, ["landing-v2"], { revalidate: 300 });
@@ -109,7 +107,13 @@ const logoMark = (s: number) => (
 );
 
 export default async function Landing() {
-  const d = await landingData();
+  // Logos stay out of the 5-minute page cache: they have their own, which never keeps a failure.
+  const [cached, logos] = await Promise.all([landingData(), getCompanyLogos().catch(() => new Map<string, string>())]);
+  const d = {
+    ...cached,
+    teslaLogo: cached.teslaLogo ?? logos.get("tesla") ?? null,
+    cluster: CLUSTER.map(([id, name]) => ({ id, name, logo: logos.get(id) ?? null })),
+  };
   const back = (t: typeof d.goodTrip) => (t && t.status === "ok" && t.roundTripPct != null ? 500 * (1 - t.roundTripPct / 100) : null);
   const goodPct = d.goodTrip?.status === "ok" ? d.goodTrip.roundTripPct : null;
   const thinBack = back(d.thinTrip);

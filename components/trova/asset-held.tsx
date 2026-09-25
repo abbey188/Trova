@@ -143,12 +143,13 @@ function CompareModal({ detail, all, heldMint, onClose }: { detail: AssetDetail;
     ["Holders", (v) => <span style={NUM}>{count(v.holders)}</span>],
     ["Issuer", (v) => v.issuer],
   ];
-  const cols = `150px repeat(${all.length}, minmax(170px, 1fr))`;
+  // Narrow enough that two tokens sit side by side on a 390px phone.
+  const cols = `minmax(88px, 150px) repeat(${all.length}, minmax(118px, 1fr))`;
   if (typeof document === "undefined") return null;
   return createPortal(
     <div role="dialog" aria-modal="true" aria-label={`Compare ${detail.asset.name} tokens`} style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <button type="button" aria-label="Close" onClick={onClose} style={{ position: "absolute", inset: 0, border: "none", cursor: "default", background: "rgba(20,22,26,0.35)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }} />
-      <div style={{ position: "relative", width: `min(${220 + all.length * 230}px, 100%)`, maxHeight: "90vh", overflow: "auto", background: "var(--surface)", borderRadius: 22, padding: "20px 22px 18px", boxShadow: "0 24px 64px rgba(20,22,26,0.28)" }}>
+      <div style={{ position: "relative", width: `min(${220 + all.length * 230}px, 100%)`, maxHeight: "90vh", overflow: "auto", background: "var(--surface)", borderRadius: 22, padding: "20px clamp(14px, 3vw, 22px) 18px", boxShadow: "0 24px 64px rgba(20,22,26,0.28)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <CompanyLogo src={detail.asset.logoUrl} name={detail.asset.name} id={detail.asset.assetId} size={34} />
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
@@ -159,7 +160,7 @@ function CompareModal({ detail, all, heldMint, onClose }: { detail: AssetDetail;
           <button type="button" onClick={onClose} aria-label="Close" style={{ width: 36, height: 36, borderRadius: 10, border: "none", background: "transparent", color: "var(--ink-faint)", cursor: "pointer" }}>{Icon.close()}</button>
         </div>
         <div style={{ overflowX: "auto" }}>
-          <div style={{ display: "grid", gridTemplateColumns: cols, minWidth: 150 + all.length * 170 }}>
+          <div style={{ display: "grid", gridTemplateColumns: cols, minWidth: 88 + all.length * 118 }}>
             <span />
             {all.map((v) => {
               const held = v.mint === heldMint;

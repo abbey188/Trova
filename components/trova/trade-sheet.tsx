@@ -15,6 +15,7 @@ import { useWalletAccountTransactionSendingSigner } from "@solana/react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { solanaClient } from "@/app/providers";
 import { useHomeHref } from "@/components/trova/frame";
@@ -136,7 +137,7 @@ export function TradeSheet({
     refetchInterval: 20_000,
   });
 
-  if (!open || !target) return null;
+  if (!open || !target || typeof document === "undefined") return null;
 
   const q = quote.data;
   const pay = Number(debounced) || 0;
@@ -366,7 +367,8 @@ export function TradeSheet({
     footer = action("Review in your wallet", "The only step that asks for a signature");
   }
 
-  return (
+  // Portalled to <body>: opened from inside a sticky bar, it would otherwise sit under the bottom nav.
+  return createPortal(
     <div role="dialog" aria-modal="true" aria-label={title} className="items-end md:items-center" style={{ position: "fixed", inset: 0, zIndex: 80, display: "flex", justifyContent: "center" }}>
       <button type="button" aria-label="Close" onClick={() => !busy && onClose()} style={{ position: "absolute", inset: 0, background: "rgba(20,22,26,0.55)", border: "none", cursor: "default" }} />
       <div className="rounded-t-[24px] md:rounded-[24px]" style={{ position: "relative", width: "min(440px, 100vw)", maxHeight: "94vh", overflowY: "auto", background: "var(--surface)", display: "flex", flexDirection: "column" }}>
@@ -396,6 +398,8 @@ export function TradeSheet({
         )}
       </div>
     </div>
+    ,
+    document.body,
   );
 }
 

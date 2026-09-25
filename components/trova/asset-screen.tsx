@@ -151,7 +151,7 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
           <span style={{ fontSize: 11, color: "var(--grade-c)", fontWeight: 600 }}>where it trades · issuer lists {usd(top.listedPriceUsd)}</span>
         )}
       </div>
-      {detail.reference && <MarketPriceBlock detail={detail} />}
+      {detail.reference && top?.gapPercent != null && <MarketPriceBlock detail={detail} />}
     </div>
   );
 }
@@ -159,7 +159,8 @@ function TitleRow({ detail, top, price, change, changePct, rangeLabel }: { detai
 /** The real share (or ounce) off-chain, beside the on-chain price. Display only, never scored. */
 function MarketPriceBlock({ detail, compact }: { detail: AssetDetail; compact?: boolean }) {
   const r = detail.reference!;
-  const status = r.marketOpen == null ? null : r.marketOpen ? "US market open" : "US market closed · on-chain open";
+  // Only shares keep exchange hours; spot metal trades around the clock.
+  const status = r.basis !== "share" || r.marketOpen == null ? null : r.marketOpen ? "US market open" : "US market closed · on-chain open";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingLeft: compact ? 0 : 22, borderLeft: compact ? "none" : "1px solid var(--hairline)" }}>
       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase", color: "var(--ink-faint)" }}>{r.basis === "ounce" ? "Spot · per ounce" : `On the exchange · ${r.ticker}`}</span>
@@ -309,7 +310,7 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
     ...(asset.cusip ? [["CUSIP", asset.cusip] as [string, ReactNode]] : []),
     ["Tokens on Solana", n],
     ...(detail.tokenizedSupply != null ? [["Tokenized supply", Math.round(detail.tokenizedSupply).toLocaleString("en-US")] as [string, ReactNode]] : []),
-    ...(reference?.marketOpen != null ? [["Market", <span key="m" style={{ color: reference.marketOpen ? "var(--grade-a)" : "var(--ink-soft)" }}>{reference.marketOpen ? "US market open" : "US market closed"}</span>] as [string, ReactNode]] : []),
+    ...(reference?.marketOpen != null && reference.basis === "share" ? [["Market", <span key="m" style={{ color: reference.marketOpen ? "var(--grade-a)" : "var(--ink-soft)" }}>{reference.marketOpen ? "US market open" : "US market closed"}</span>] as [string, ReactNode]] : []),
   ];
   return (
     <Panel style={{ padding: "16px 20px" }}>
@@ -717,7 +718,7 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options, ctx }: { de
           )}
           <span style={{ fontSize: 11, color: "var(--ink-faint)" }}>{RANGE_WORDS[c.range]}</span>
         </div>
-        {detail.reference && !priv && <div style={{ marginTop: 10 }}><MarketPriceBlock detail={detail} compact /></div>}
+        {detail.reference && !priv && top?.gapPercent != null && <div style={{ marginTop: 10 }}><MarketPriceBlock detail={detail} compact /></div>}
         <div style={{ marginTop: 12 }}><PriceChart token={c.series.token} reference={c.series.ref} height={132} labels={false} /></div>
         <div style={{ marginTop: 10 }}><RangeTabs value={c.range} onChange={c.setRange} available={c.available} full /></div>
       </div>

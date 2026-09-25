@@ -10,23 +10,29 @@ import { getCurated, type CuratedList } from "./tokens-xyz";
 
 const CLEAN = /^https:\/\/api\.tokens\.xyz\/logos\//;
 const TTL_MS = 30 * 60_000;
+const RETRY_MS = 60_000;
 
-let cache: { at: number; map: Map<string, string> } | null = null;
+let cache: { at: number; map: Map<string, string>; ttl: number } | null = null;
 
 export const isCleanLogo = (url: string | null | undefined): url is string => !!url && CLEAN.test(url);
 
-/** assetId → clean company logo, from every curated list. Never throws; an outage means no logos. */
+/**
+ * assetId → clean company logo, from every curated list. Never throws; an outage means no logos.
+ * A complete read is kept for TTL_MS. A partial one (a list failed) is merged over the last good map
+ * and retried after RETRY_MS — so one failed fetch can never blank the logos for half an hour.
+ */
 export async function getCompanyLogos(): Promise<Map<string, string>> {
-  if (cache && Date.now() - cache.at < TTL_MS) return cache.map;
-  const map = new Map<string, string>();
+  if (cache && Date.now() - cache.at < cache.ttl) return cache.map;
+  const map = new Map<string, string>(cache?.map ?? []);
   const lists: CuratedList[] = ["stocks", "etfs", "metals", "rwas"];
-  const results = await Promise.all(lists.map((l) => getCurated(l).catch(() => ({ assets: [] as unknown[] }))));
+  let failed = false;
+  const results = await Promise.all(lists.map((l) => getCurated(l).catch(() => { failed = true; return { assets: [] as unknown[] }; })));
   for (const r of results) {
     for (const a of (r.assets ?? []) as { assetId?: string; imageUrl?: string }[]) {
       if (a.assetId && isCleanLogo(a.imageUrl)) map.set(a.assetId, a.imageUrl);
     }
   }
-  cache = { at: Date.now(), map };
+  cache = { at: Date.now(), map, ttl: failed || map.size === 0 ? RETRY_MS : TTL_MS };
   return map;
 }
 
