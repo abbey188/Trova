@@ -18,9 +18,9 @@ const body = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Trova — a safety rating for tokenized stocks",
+  title: "Trova — know what you own",
   description:
-    "The same stock exists on Solana as several tokens with very different rights. Trova rates what you'd actually own and whether you can get out — then lets you buy the soundest one and sell whenever you want.",
+    "Trova is a portfolio manager for tokenized stocks on Solana that rates every token on Ownership and Exit, so you hold the right one.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

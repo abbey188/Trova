@@ -143,7 +143,7 @@ export default async function DocsPage() {
           <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v3.2</span>
             <h1 style={{ ...DISPLAY, margin: 0, fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 700, letterSpacing: -1, lineHeight: 1.05 }}>How Trova rates a tokenized stock</h1>
-            <P>Trova is a safety rating for tokenized stocks on Solana. It asks two questions of every token — what would you own, and could you get back out — and nothing else. Every rating shows its working, and every rating updates as information becomes public.</P>
+            <P>Trova rates every tokenized stock on Solana on two things: <b style={{ color: "var(--ink)" }}>Ownership</b>, what you&apos;d actually own, and <b style={{ color: "var(--ink)" }}>Exit</b>, whether you can get back out. Together they make the Trova Score. Every rating shows its working, and every rating updates as information becomes public.</P>
           </header>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -292,7 +292,8 @@ export default async function DocsPage() {
               ["Pyth · Backpack", "The real share's price, history and market hours — display only"],
               ["Helius RPC", "Reading wallets (including Token-2022 splits) and sending transactions"],
             ]} />
-            <P>Trova rates what its sources report; where an issuer reports nothing, it says so and lowers confidence. Reading a portfolio never needs a signature, and Trova never holds a key. Nothing here is investment advice.</P>
+            <P>Trova rates what its sources report; where an issuer reports nothing, it says so and lowers confidence. Reading a portfolio never needs a signature, and Trova never holds a key.</P>
+            <P><b style={{ color: "var(--ink)" }}>The Trova Score is not a credit rating, a guarantee of safety, or investment advice.</b></P>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <Link href="/markets" style={{ display: "inline-flex", alignItems: "center", height: 44, padding: "0 20px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: "var(--action)", color: "var(--action-ink)", textDecoration: "none" }}>See every rating</Link>
               <Link href="/p/demo" style={{ display: "inline-flex", alignItems: "center", height: 44, padding: "0 20px", borderRadius: 12, fontSize: 14, fontWeight: 600, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", textDecoration: "none" }}>Try the demo portfolio</Link>
