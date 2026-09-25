@@ -7,6 +7,7 @@ import { pool } from "./async";
 import { getBackpackIssuedMints, getExternalTickers, getSecurities } from "./backpack";
 import { getWalletTokens, NATIVE_SOL_MINT } from "./helius";
 import { explain } from "./explain";
+import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { sellNow } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
@@ -45,7 +46,7 @@ const MAX_LISTED = 3;                     // beyond this many same-kind signals,
 export const PRICE_FRESH_MS = 48 * 60 * 60 * 1000;
 export const REFERENCE_DIVERGENCE = 0.25;
 
-export type PriceSource = "market" | "pyth" | "backpack" | "unknown";
+export type PriceSource = "market" | "trades" | "pyth" | "backpack" | "unknown";
 
 export interface Valuation {
   priceUsd: number | null;
@@ -278,6 +279,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const historyDays = change?.historyDays ?? 0;
 
   const holdings: Holding[] = [];
+  const tradesByMint = new Map<string, number>();
   for (const h of held) {
     const variants = variantsByAsset.get(h.entry.asset.assetId);
     if (!variants) { otherTokens++; continue; }
@@ -311,6 +313,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       best && best.variant.mint !== h.mint &&
       (!mine.score.routable || !mine.score.rated || best.score.score! > (mine.score.score ?? 0))
         ? best : null;
+    tradesByMint.set(h.mint, mine.variant.market.trade24h ?? 0);
     const view = (r: RankedVariant) => variantView(r.variant, r.score, h.entry.asset.assetId, backpackMints?.has(r.variant.mint) ?? false);
     holdings.push({
       asset: assetOf(h.entry),
@@ -374,10 +377,28 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   for (const h of holdings) {
     const closes = closesByMint.get(h.variant.mint);
     if (!closes?.length) continue;
+
+    // A listed price that the token's own heavy, recent trading clearly disagrees with is not its
+    // price (lib/price.ts). Only for holdings priced from their own market: one already valued at
+    // the real stock's price was repriced for a reason, and stays that way.
+    if (h.valuation.source === "market") {
+      const choice = choosePrice(h.valuation.priceUsd, closes.at(-1), tradesByMint.get(h.variant.mint) ?? null);
+      if (choice.basis === "trades" && choice.priceUsd != null) {
+        h.valuation = { priceUsd: choice.priceUsd, source: "trades", stale: false };
+        h.valueUsd = h.amount * choice.priceUsd;
+        if (h.sellNow?.status === "ok" && h.sellNow.receivedUsd != null && h.valueUsd > 0) {
+          h.sellNow.lossPct = Math.max(0, ((h.valueUsd - h.sellNow.receivedUsd) / h.valueUsd) * 100);
+          if (h.exitQuote) h.exitQuote.roundTripPct = h.sellNow.lossPct;
+        }
+      }
+    }
+
     const last90 = closes.slice(-SPARK_DAYS).map((c) => c.close);
     h.spark = last90;
     h.sparkChangePct = last90.length > 1 ? ((last90[last90.length - 1] - last90[0]) / last90[0]) * 100 : null;
   }
+  // Repricing to where a token trades can change which position is largest.
+  holdings.sort((a, b) => b.valueUsd - a.valueUsd);
 
   const scored = portfolioScores(holdings.map((h) => ({ valueUsd: h.valueUsd, score: h.variant.score })));
   return {

@@ -238,7 +238,7 @@ export interface Holding {
   valueUsd: number;             // 0 when the holding can't be valued (see valuation.source "unknown")
   /** How the holding was priced: the variant's own market, a real stock price (Pyth, else Backpack),
    *  or not at all. Dead variants keep quoting a stale last trade, so their own price isn't trusted. */
-  valuation: { priceUsd: number | null; source: "market" | "pyth" | "backpack" | "unknown"; stale: boolean };
+  valuation: { priceUsd: number | null; source: "market" | "trades" | "pyth" | "backpack" | "unknown"; stale: boolean };
   /** Measured cost to leave this position at its current size. */
   exitQuote?: ExitQuote | null;
   /** What selling this exact balance returns right now, one way to USDC. The holder's number. */
@@ -448,6 +448,10 @@ export interface PriceReference {
 
 export interface AssetVariantView extends Variant {
   isBest: boolean;
+  /** "trades" when tokens.xyz's listed price was replaced by where the token actually trades (lib/price.ts). */
+  priceBasis?: "listed" | "trades";
+  /** tokens.xyz's listed price, kept whenever `priceUsd` is not it. */
+  listedPriceUsd?: number | null;
   /** Why THIS token is rated as it is — headline, drivers, re-scored scenarios, benefits. */
   explanation?: import("./explain").Explanation;
   /** Daily rating history behind the chart, oldest first. Null when we have never snapshotted it. */
@@ -474,7 +478,14 @@ export interface AssetDetail {
   } | null;
   reference: PriceReference | null;
   /** Pre-IPO only: last private valuation vs the valuation the token price implies. */
-  privateMark: { markValuationUsd: number; impliedValuationUsd: number | null; premiumToMarkPercent: number | null; asOf: number | null } | null;
+  privateMark: {
+    markValuationUsd: number;
+    impliedValuationUsd: number | null;
+    premiumToMarkPercent: number | null;
+    asOf: number | null;
+    /** The same comparison at the price the token actually trades, when that differs from the listed one. */
+    atTradedPrice: { impliedValuationUsd: number; premiumToMarkPercent: number; tradedUsd: number; listedUsd: number } | null;
+  } | null;
   variants: AssetVariantView[];
   best: { mint: string; symbol: string; closeCall: boolean; runnerUpMint: string | null } | null;
   /** Another rater's verdict on the same asset, shown beside ours — never folded into it. */

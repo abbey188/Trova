@@ -3,6 +3,7 @@
 
 import { getBackpackIssuedMints, getExternalKlines, getExternalTickers, getSecurities, type BpKline } from "./backpack";
 import { explain } from "./explain";
+import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { exitLadder } from "./jupiter";
 import { getScaledUiAmounts } from "./token-extensions";
@@ -184,6 +185,17 @@ export async function buildAssetDetail(
     };
   });
 
+  // The charted token's price: tokens.xyz's listed price, unless its own recent, heavy trading clearly
+  // disagrees (lib/price.ts). Only the charted variant has candles in hand, so only it is checked.
+  const charted = views.find((v) => v.mint === chartDaily?.mint);
+  const lastClose = chartDaily?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1) ?? null;
+  const choice = charted ? choosePrice(charted.priceUsd, lastClose, rawTrades24h(ranked, charted.mint)) : null;
+  if (charted && choice?.basis === "trades") {
+    charted.priceUsd = choice.priceUsd ?? charted.priceUsd;
+    charted.priceBasis = "trades";
+    charted.listedPriceUsd = choice.listedUsd;
+  }
+
   // A split or distribution the issuer scheduled on the mint itself (Token-2022 scaled UI amount).
   // Optional context: if the lookup fails the page still renders, just without it.
   try {
@@ -240,7 +252,7 @@ export async function buildAssetDetail(
         }
       : null,
     reference,
-    privateMark: privateMarkFacts(asset?.canonicalMarket),
+    privateMark: withTradedPrice(privateMarkFacts(asset?.canonicalMarket), asset?.canonicalMarket?.price, choice),
     variants: views,
     best: best ? { mint: best.variant.mint, symbol: best.variant.symbol, closeCall, runnerUpMint: runnerUp?.variant.mint ?? null } : null,
     externalRating: externalRating(risk),
@@ -359,6 +371,37 @@ function priceHistory(
       week52: useReference
         ? range(dailyRef.filter((c) => c.time >= yearAgo).map((c) => c.close))
         : range(dailyToken.filter((c) => c.time >= yearAgo).map((c) => c.close)),
+    },
+  };
+}
+
+function rawTrades24h(ranked: { variant: TxzVariant }[], mint: string): number | null {
+  return ranked.find((r) => r.variant.mint === mint)?.variant.market.trade24h ?? null;
+}
+
+/**
+ * tokens.xyz's "valuation this token implies" is computed at the issuer's reference price. When the
+ * token trades somewhere else, restate it at the traded price too — scaled by the ratio of the two,
+ * since the implied valuation is linear in price. Both are shown; neither replaces the mark.
+ */
+function withTradedPrice(
+  mark: ReturnType<typeof privateMarkFacts>,
+  canonicalPrice: number | null | undefined,
+  choice: ReturnType<typeof choosePrice> | null,
+): AssetDetail["privateMark"] {
+  if (!mark) return null;
+  const base = { ...mark, atTradedPrice: null };
+  if (choice?.basis !== "trades" || choice.tradedUsd == null || !(canonicalPrice && canonicalPrice > 0) || mark.impliedValuationUsd == null) {
+    return base;
+  }
+  const implied = mark.impliedValuationUsd * (choice.tradedUsd / canonicalPrice);
+  return {
+    ...base,
+    atTradedPrice: {
+      impliedValuationUsd: implied,
+      premiumToMarkPercent: (implied / mark.markValuationUsd - 1) * 100,
+      tradedUsd: choice.tradedUsd,
+      listedUsd: canonicalPrice,
     },
   };
 }
