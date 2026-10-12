@@ -9,9 +9,9 @@
 // Our server builds the unsigned transaction; the wallet signs AND sends it. It is the only step in
 // Trova that asks for a signature, and Trova never holds a key.
 
-import { getBase58Decoder, getBase64Encoder, getTransactionDecoder } from "@solana/kit";
+import { getBase58Decoder, getBase64EncodedWireTransaction, getBase64Encoder, getTransactionDecoder, type Transaction } from "@solana/kit";
 import { useConnectedWallet } from "@solana/kit-plugin-wallet/react";
-import { useWalletAccountTransactionSendingSigner } from "@solana/react";
+import { useWalletAccountTransactionSendingSigner, useWalletAccountTransactionSigner } from "@solana/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
@@ -64,7 +64,7 @@ export const swapFromHolding = (h: Holding): SwapFrom => ({
 });
 
 interface Quote {
-  status: "ok" | "no-route" | "unavailable";
+  status: "ok" | "no-route" | "unavailable" | "market-closed";
   inAmount?: string;
   outAmount?: string;
   inUi?: number | null;
@@ -427,7 +427,7 @@ function QuoteState({ quoting, status, symbol }: { quoting: boolean; status?: Qu
   if (quoting || !status) return <div className="animate-pulse" style={{ height: 64, borderRadius: 10, background: "var(--track)" }} />;
   return (
     <span style={{ fontSize: 13, color: status === "no-route" ? "var(--danger)" : "var(--ink-soft)" }}>
-      {status === "no-route" ? `Jupiter has no route into ${symbol} at this size.` : "Couldn't reach Jupiter just now. Try again in a moment."}
+      {status === "no-route" ? `Jupiter has no route into ${symbol} at this size.` : status === "market-closed" ? `${symbol} does not trade while the US market is shut.` : "Couldn't reach Jupiter just now. Try again in a moment."}
     </span>
   );
 }
@@ -458,9 +458,10 @@ function BeforeAfter({ label, before, after, beforeBad, afterColor = "var(--grad
 }
 
 /**
- * Builds the unsigned transaction on our server (fresh quote, our terms), hands it to the wallet
- * to sign AND send, then watches the signature until the chain answers. Trova never holds a key or
- * a signed transaction.
+ * Builds the unsigned transaction on our server (fresh quote, our terms), then watches the signature
+ * until the chain answers. A pool trade is signed AND sent by the wallet. A market-maker fill needs
+ * the maker's signature too, so the wallet signs it without sending and our server relays those
+ * signed bytes to Jupiter, which completes and submits it. Trova never holds a key.
  */
 function SendButton({ account, disabled, phase, setPhase, request, label, note }: {
   account: NonNullable<ReturnType<typeof useConnectedWallet>>["account"];
@@ -472,19 +473,30 @@ function SendButton({ account, disabled, phase, setPhase, request, label, note }
   note: string;
 }) {
   const signer = useWalletAccountTransactionSendingSigner(account, "solana:mainnet");
+  const signOnly = useWalletAccountTransactionSigner(account, "solana:mainnet");
   const qc = useQueryClient();
 
   async function go() {
     try {
       setPhase({ kind: "building" });
-      const built = await api<{ swapTransaction: string }>("/api/swap", {
+      const built = await api<{ swapTransaction: string; route?: "pools" | "order"; requestId?: string }>("/api/swap", {
         method: "POST",
         body: JSON.stringify({ ...request, userPublicKey: account.address }),
       });
       const tx = getTransactionDecoder().decode(getBase64Encoder().encode(built.swapTransaction));
       setPhase({ kind: "signing" });
-      const [sig] = await signer.signAndSendTransactions([tx]);
-      const signature = getBase58Decoder().decode(sig);
+      let signature: string;
+      if (built.route === "order" && built.requestId) {
+        const [signed] = await signOnly.modifyAndSignTransactions([tx as Parameters<typeof signOnly.modifyAndSignTransactions>[0][number]]);
+        const done = await api<{ signature: string }>("/api/swap/execute", {
+          method: "POST",
+          body: JSON.stringify({ signedTransaction: getBase64EncodedWireTransaction(signed as Transaction), requestId: built.requestId }),
+        });
+        signature = done.signature;
+      } else {
+        const [sig] = await signer.signAndSendTransactions([tx]);
+        signature = getBase58Decoder().decode(sig);
+      }
       setPhase({ kind: "sent", signature });
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 1500));

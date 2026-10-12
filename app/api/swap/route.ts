@@ -1,5 +1,12 @@
 // POST /api/swap { inputMint, outputMint, amount, slippageBps, userPublicKey }
-//   → { swapTransaction } — an UNSIGNED transaction, base64.
+//   → { swapTransaction, route } — an UNSIGNED transaction, base64.
+//
+// Two routes, and the trade is built on whichever returns clearly more. "pools" is Jupiter's
+// aggregator: the wallet signs AND sends. "order" is the route market makers quote on — the only
+// way to fill tokens like Ondo's at a fair price: the wallet signs WITHOUT sending, and
+// POST /api/swap/execute relays it to Jupiter, which adds the maker's signature. Before 2026-10-12
+// every trade went through pools, so selling a market-maker-filled token here would have returned a
+// fraction of its value.
 //
 // The only step in Trova that leads to a signature, and the signature happens in the user's wallet,
 // never here: Trova holds no keys. The server re-quotes fresh rather than trusting a quote sent from
@@ -7,7 +14,7 @@
 // not the client's. The wallet shows the simulated result before the user approves anything.
 
 import { isSolanaAddress } from "@/lib/helius";
-import { quoteDetailed, swapTransaction } from "@/lib/jupiter";
+import { orderQuote, preferOrder, quoteDetailed, swapTransaction } from "@/lib/jupiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,15 +49,36 @@ export async function POST(request: Request) {
   }
 
   try {
-    const leg = await quoteDetailed(inputMint, outputMint, amountRaw, { slippageBps, withFee: true, fresh: true });
+    const [leg, order] = await Promise.all([
+      quoteDetailed(inputMint, outputMint, amountRaw, { slippageBps, withFee: true, fresh: true }),
+      orderQuote(inputMint, outputMint, amountRaw, { taker: userPublicKey }),
+    ]);
+
+    if (preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null) && order.ok && order.quote.transaction && order.quote.requestId) {
+      return Response.json({
+        status: "ok",
+        route: "order",
+        swapTransaction: order.quote.transaction,
+        requestId: order.quote.requestId,
+        inAmount: order.quote.inAmount,
+        outAmount: order.quote.outAmount,
+        priceImpactPct: 0,
+        routeLabels: order.quote.routeLabels,
+      }, { headers: { "Cache-Control": "no-store" } });
+    }
+
     if (!leg.ok) {
-      return Response.json({ status: leg.reason, error: leg.reason === "no-route" ? "No route at this size." : "Jupiter is unavailable right now." }, { status: 409 });
+      const reason = !order.ok && order.reason === "market-closed" ? "market-closed" : leg.reason;
+      const error = reason === "market-closed" ? "This token does not trade while the US market is shut."
+        : reason === "no-route" ? "No route at this size." : "Jupiter is unavailable right now.";
+      return Response.json({ status: reason, error }, { status: 409 });
     }
     const tx = await swapTransaction({ quote: leg.quote, userPublicKey });
     if (!tx) return Response.json({ status: "unavailable", error: "Could not build the transaction. Try again." }, { status: 502 });
 
     return Response.json({
       status: "ok",
+      route: "pools",
       swapTransaction: tx,
       inAmount: leg.quote.inAmount,
       outAmount: leg.quote.outAmount,

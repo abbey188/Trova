@@ -196,10 +196,16 @@ export async function buildAssetDetail(
   // Aged from when the candle ENDS: a daily candle is stamped at the start of its day, so measured
   // from its start yesterday's close already looked 36h old by midday and the rule quietly switched
   // off. The hourly series is preferred where there is one — it is the most recent trade we have.
+  // Read once: the multiplier is needed here, and the controls and corporate action further down.
+  const facts = await getMintFacts(views.map((v) => v.mint)).catch(() => null);
+  // Candles are priced per RAW token and the listed price per DISPLAYED (scaled) token, so a traded
+  // close is brought to the same unit before the two are compared. Unscaled, OPENAI (x1.486) and
+  // SPACEX (x5) looked like markets that disagreed with their listed price.
+  const perDisplayed = charted ? facts?.get(charted.mint)?.scaled?.multiplier ?? 1 : 1;
   const lastHourly = chartIntraday?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1);
   const lastDaily = chartDaily?.candles?.filter((c) => Number.isFinite(c.close) && c.close > 0).at(-1);
-  const lastClose = lastHourly ? { time: lastHourly.time + 3_600, close: lastHourly.close }
-    : lastDaily ? { time: lastDaily.time + 86_400, close: lastDaily.close } : null;
+  const lastClose = lastHourly ? { time: lastHourly.time + 3_600, close: lastHourly.close / perDisplayed }
+    : lastDaily ? { time: lastDaily.time + 86_400, close: lastDaily.close / perDisplayed } : null;
   const choice = charted ? choosePrice(charted.priceUsd, lastClose, rawTrades24h(ranked, charted.mint)) : null;
   if (charted && choice?.basis === "trades") {
     charted.priceUsd = choice.priceUsd ?? charted.priceUsd;
@@ -210,7 +216,7 @@ export async function buildAssetDetail(
   // A split or distribution the issuer scheduled on the mint itself (Token-2022 scaled UI amount).
   // Optional context: if the lookup fails the page still renders, just without it.
   try {
-    const facts = await getMintFacts(views.map((v) => v.mint));
+    if (!facts) throw new Error("mint accounts unavailable");
     for (const v of views) {
       const s = facts.get(v.mint)?.scaled;
       v.controls = facts.get(v.mint)?.controls ?? null;

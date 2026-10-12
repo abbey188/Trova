@@ -5,7 +5,7 @@
 // measured by quoting the sale straight back. Read-only; nothing here asks for a signature.
 
 import { getMintDecimals, isSolanaAddress } from "@/lib/helius";
-import { quoteDetailed } from "@/lib/jupiter";
+import { bestQuote, orderQuote, preferOrder, quoteDetailed } from "@/lib/jupiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,8 +34,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [leg, decimals] = await Promise.all([
+    // Both routes, because the trade executes on whichever returns clearly more (see /api/swap).
+    const [leg, order, decimals] = await Promise.all([
       quoteDetailed(inputMint, outputMint, amountRaw, { slippageBps, withFee: true, fresh: true }),
+      orderQuote(inputMint, outputMint, amountRaw, { fresh: true }),
       getMintDecimals([inputMint, outputMint]).catch(() => new Map<string, number>()),
     ]);
     const ui = (raw: string, mint: string) => {
@@ -43,14 +45,20 @@ export async function GET(request: Request) {
       return d == null ? null : Number(raw) / 10 ** d;
     };
 
-    if (!leg.ok) {
-      // "no-route" is a finding about the token; "unavailable" is about Jupiter. Never conflate them.
-      return Response.json({ status: leg.reason, inputMint, outputMint, amount: amountRaw });
+    const viaOrder = preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null);
+    if (!leg.ok && !viaOrder) {
+      // "no-route" is a finding about the token; "unavailable" is about Jupiter; "market-closed" is
+      // about the hour. Never conflate them.
+      const status = !order.ok && order.reason === "market-closed" ? "market-closed" : leg.reason;
+      return Response.json({ status, inputMint, outputMint, amount: amountRaw });
     }
-    const q = leg.quote;
+    const q = viaOrder && order.ok
+      ? { inAmount: order.quote.inAmount, outAmount: order.quote.outAmount, priceImpactPct: 0, routeLabels: order.quote.routeLabels, slippageBps }
+      : leg.ok ? leg.quote : null;
+    if (!q) return Response.json({ status: "unavailable", inputMint, outputMint, amount: amountRaw });
 
-    // Cost to leave again: quote the sale straight back at the size just bought.
-    const back = await quoteDetailed(outputMint, inputMint, q.outAmount, { slippageBps });
+    // Cost to leave again: quote the sale straight back at the size just bought, on the better route.
+    const back = await bestQuote(outputMint, inputMint, q.outAmount, { slippageBps });
     const leaveAgain = back.ok
       ? {
           status: "ok" as const,
@@ -72,6 +80,9 @@ export async function GET(request: Request) {
       priceImpactPct: q.priceImpactPct,
       routeLabels: q.routeLabels,
       slippageBps: q.slippageBps,
+      // "order" trades are filled by a market maker and signed without being sent (see /api/swap).
+      route: viaOrder ? "order" : "pools",
+      liquidity: viaOrder && order.ok ? order.quote.liquidity : "pools",
       leaveAgain,
       quotedAt: Date.now(),
     }, { headers: { "Cache-Control": "no-store" } });

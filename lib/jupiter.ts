@@ -428,6 +428,51 @@ export async function sellNow(mint: string, rawAmount: bigint, valueUsd: number,
   };
 }
 
+/** The order route must beat the pool route by this much before a trade is sent down it: it has a
+ *  different signing flow, so a tie is not a reason to change how the trade is made. */
+export const ORDER_ROUTE_EDGE = 1.003;
+
+/**
+ * Which route a trade should execute on. Pools unless the order route returns clearly more — which
+ * is every market-maker-filled token, where pools return a fraction of the value.
+ */
+export function preferOrder(pool: { outAmount: string } | null, order: { outAmount: string } | null): boolean {
+  if (!order) return false;
+  if (!pool) return true;
+  return Number(order.outAmount) > Number(pool.outAmount) * ORDER_ROUTE_EDGE;
+}
+
+/**
+ * Hand a signed order transaction to Jupiter to execute. A market-maker fill needs the maker's
+ * signature as well as the wallet's, and Jupiter adds it here — which is why the wallet signs this
+ * kind of trade without sending it. We relay what the wallet signed; we never hold a key.
+ */
+export async function executeOrder(signedTransaction: string, requestId: string): Promise<{ ok: true; signature: string } | { ok: false; error: string }> {
+  if (!ORDER_BASE) return { ok: false, error: "Order route is not configured." };
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const res = await paced(() => {
+      timer = setTimeout(() => controller.abort(), 30_000);
+      return fetch(`${ORDER_BASE}/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...AUTH },
+        body: JSON.stringify({ signedTransaction, requestId }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+    });
+    const body = (await res.json().catch(() => ({}))) as { status?: string; signature?: string; error?: string; code?: number };
+    if (res.ok && body.status === "Success" && body.signature) return { ok: true, signature: body.signature };
+    console.error("jupiter execute failed", res.status, JSON.stringify(body).slice(0, 300));
+    return { ok: false, error: body.error ?? "Jupiter did not execute the trade." };
+  } catch {
+    return { ok: false, error: "Jupiter could not be reached to execute the trade." };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export interface SwapRequest {
   quote: Quote;
   userPublicKey: string;

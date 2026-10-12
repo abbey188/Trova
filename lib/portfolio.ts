@@ -12,7 +12,7 @@ import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { forScore, latestMeasurements } from "./exit-store";
 import { sellNow } from "./jupiter";
-import { withScaledAmounts } from "./token-extensions";
+import { getMintFacts, withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals, sortSignals } from "./signals";
 import { getOhlcv, getVariantMarkets, getVariants, resolveIssuer, type TxzVariantMarket } from "./tokens-xyz";
@@ -224,13 +224,17 @@ const DEMO_HOLDINGS: { mint: string; amount: number; decimals: number }[] = [
   { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", amount: 220, decimals: 6 },  // USDC
 ];
 
-function demoTokens(): { solBalance: number; tokens: WalletToken[] } {
+async function demoTokens(): Promise<{ solBalance: number; tokens: WalletToken[] }> {
+  // The quantities above are DISPLAY amounts. A mint with a scaled-UI multiplier holds fewer raw units
+  // than it displays (OPENAI: x1.486), and a sale is quoted in raw units — so the raw amount is the
+  // display amount divided back down. Without this the demo valued 1.2 OPENAI but sold 1.78 of it.
+  const facts = await getMintFacts(DEMO_HOLDINGS.map((h) => h.mint)).catch(() => new Map());
   return {
     solBalance: 0,
     // "spl-token" so the display amounts above are taken as they are, not rescaled a second time.
     tokens: DEMO_HOLDINGS.map((h) => ({
       mint: h.mint, amount: h.amount, decimals: h.decimals, program: "spl-token" as const,
-      rawAmount: BigInt(Math.round(h.amount * 10 ** h.decimals)).toString(),
+      rawAmount: BigInt(Math.round((h.amount / (facts.get(h.mint)?.scaled?.multiplier ?? 1)) * 10 ** h.decimals)).toString(),
     })),
   };
 }
@@ -243,7 +247,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
   const demo = wallet === DEMO_WALLET;
 
   const [{ solBalance, tokens: rawTokens }, universe, securities, backpackMints, referencePrices] = await Promise.all([
-    demo ? Promise.resolve(demoTokens()) : getWalletTokens(wallet),
+    demo ? demoTokens() : getWalletTokens(wallet),
     getCuratedUniverse(universeErrors),
     soft("Backpack securities list", getSecurities()),
     soft("Backpack issuer list", getBackpackIssuedMints()),
@@ -420,6 +424,12 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     }
   });
   await Promise.all([charts, quotes]);
+  // Candles are priced per RAW token; tokens.xyz lists a price per DISPLAYED (scaled) token, and a
+  // holding is counted in displayed tokens. Measured 2026-10-12: OPENAI x1.486 lists at $1,491 and
+  // closes at $2,118; SPACEX x5 lists at $122 and closes at $628; NFLXx x10 at $70 and $703. Left
+  // unscaled, the trades rule below read that as a market disagreeing with the listed price and
+  // revalued an OPENAI holding 42% too high and a SPACEX one five times too high.
+  const mintFacts = await getMintFacts(holdings.map((h) => h.variant.mint)).catch(() => new Map<string, { scaled: { multiplier: number } | null }>());
 
   for (const h of holdings) {
     const closes = closesByMint.get(h.variant.mint);
@@ -431,7 +441,8 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     if (h.valuation.source === "market") {
       // Daily candles are stamped at the start of their day; age them from the end.
       const last = closes.at(-1);
-      const choice = choosePrice(h.valuation.priceUsd, last ? { time: last.time + 86_400, close: last.close } : null, tradesByMint.get(h.variant.mint) ?? null);
+      const perDisplayed = last ? last.close / (mintFacts.get(h.variant.mint)?.scaled?.multiplier ?? 1) : null;
+      const choice = choosePrice(h.valuation.priceUsd, last && perDisplayed != null ? { time: last.time + 86_400, close: perDisplayed } : null, tradesByMint.get(h.variant.mint) ?? null);
       if (choice.basis === "trades" && choice.priceUsd != null) {
         h.valuation = { priceUsd: choice.priceUsd, source: "trades", stale: false };
         h.valueUsd = h.amount * choice.priceUsd;

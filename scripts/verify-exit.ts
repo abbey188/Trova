@@ -3,8 +3,11 @@
 // order route is never asked and every token reads as pools alone.
 //
 // These are observations of a live market, so the assertions are deliberately loose: a market-maker
-// filled token must cost far less than its pools say, a dead token must stay dead, and a token that
-// is shut for the night must say so instead of reporting a loss.
+// filled token must cost far less than its pools say, and a token that is shut for the night must
+// say so instead of reporting a loss. Nothing is asserted about CLSKx, once our example of a token
+// that could not be left: on 2026-10-12 a $5,000 round trip in it cost 1.0% through a market maker
+// at 03:00 UTC and 99.98% an hour earlier, when none was quoting. Whether a thin token can be left
+// depends on the hour, which is why the measurement is stored by market session.
 
 import { exitCeiling, exitCost, exitLadder, sellNow } from "../lib/jupiter";
 
@@ -28,7 +31,6 @@ async function main() {
     console.log(`${symbol.padEnd(7)} $500  ${c.status.padEnd(13)} best ${pct(c.roundTripPct).padEnd(9)} pools alone ${pct(c.poolsRoundTripPct).padEnd(9)} filled by ${c.liquidity ?? "—"}  ${c.routeLabels.join("+")}`);
 
     if (symbol === "TSLAx") expect(c.status === "ok" && (c.roundTripPct ?? 99) < 1, "TSLAx should round-trip $500 for under 1%");
-    if (symbol === "CLSKx") expect(c.status !== "ok" || (c.roundTripPct ?? 0) > 50, "CLSKx should not be cheaply exitable");
     if (symbol === "TSLAon" || symbol === "NFLXon") {
       // Either it trades through a market maker for well under what its pools say, or it is shut.
       expect(c.status === "market-closed" || (c.status === "ok" && (c.roundTripPct ?? 99) < 2), `${symbol} should be cheap through a market maker, or report market-closed`);
