@@ -108,7 +108,7 @@ function ScoreMap({ points }: { points: { label: string; o: number; e: number }[
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, maxWidth: 360 }}>
         <P>Each square is the grade a token would get with that Ownership and Exit. The curves are the grade lines. Because the halves multiply, a token needs <b style={{ color: "var(--ink)" }}>both</b> to reach A — strength on one side cannot buy it.</P>
-        <P>The dots are real tokens, live: a sound Tesla token, a thin one with the same paperwork, and an OpenAI exposure token whose market is deep but whose ownership is almost nothing.</P>
+        <P>The dots are real tokens, live: two Tesla tokens with the same paperwork, and an OpenAI exposure token whose market is deep but whose ownership is almost nothing.</P>
       </div>
     </div>
   );
@@ -141,7 +141,7 @@ export default async function DocsPage() {
 
         <article style={{ flexGrow: 1, minWidth: 0, maxWidth: 860, display: "flex", flexDirection: "column", gap: 38 }}>
           <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v3.2</span>
+            <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v4.0</span>
             <h1 style={{ ...DISPLAY, margin: 0, fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 700, letterSpacing: -1, lineHeight: 1.05 }}>How Trova rates a tokenized stock</h1>
             <P>Trova rates every tokenized stock on Solana on two things: <b style={{ color: "var(--ink)" }}>Ownership</b>, what you&apos;d actually own, and <b style={{ color: "var(--ink)" }}>Exit</b>, whether you can get back out. Together they make the Trova Score. Every rating shows its working, and every rating updates as information becomes public.</P>
           </header>
@@ -150,7 +150,7 @@ export default async function DocsPage() {
             <H2 id="problem" n={1}>The problem</H2>
             <P>The same stock exists on Solana as several different tokens, from different issuers. On a price chart they look identical. What you get differs: some redeem for the real share, some pay its cash value, some give economic exposure with no rights at all, and some cannot be sold at any real size.</P>
             <P>This has hurt holders before. FTX sold stock tokens its site said could be redeemed for the underlying, while its terms said buyers had no claim to it; when FTX collapsed in 2022, holders were stuck. In 2025, OpenAI publicly warned that tokens sold under its name were not OpenAI equity.</P>
-            <P>Market-only scores miss this. tokens.xyz&apos;s own market score gives Tesla, SpaceX and OpenAI tokens the same <b style={{ color: "var(--ink)" }}>A 100 · “Established”</b> — all four of its inputs are market metrics. Trova shows it beside ours, never blended in, and adds the half it leaves out.</P>
+            <P>Market-only scores miss this. tokens.xyz&apos;s own market score gives Tesla, SpaceX and OpenAI tokens the same <b style={{ color: "var(--ink)" }}>A · “Established”</b>, 97 to 100 out of 100 — all four of its inputs are market metrics. Trova shows it beside ours, never blended in, and adds the half it leaves out.</P>
           </section>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -185,8 +185,18 @@ export default async function DocsPage() {
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <H2 id="exit" n={4}>Exit</H2>
-            <P>The mean of four measures — market depth, activity (trades and volume), holders, and fill quality where tokens.xyz reports it. Each is scored against fixed anchors taken from the tradable tokens on Solana, so <b style={{ color: "var(--ink)" }}>50 means “the median tradable token”</b>. Fixed, not recomputed live, so a token&apos;s score only moves when the token changes.</P>
-            <Table head={["Score", "Depth", "Holders", "Trades · 24h", "Volume · 24h"]} num={[0, 1, 2, 3, 4]} rows={[
+            <P>The mean of four measures — depth, activity (trades and volume), holders, and fill quality where tokens.xyz reports it. Each is scored against fixed anchors, so <b style={{ color: "var(--ink)" }}>50 means “the median tradable token”</b>. Fixed, not recomputed live, so a token&apos;s score only moves when the token changes.</P>
+            <P><b style={{ color: "var(--ink)" }}>Depth is measured, not read off a pool.</b> Each day Trova quotes a real round trip — buy, then sell straight back — at $5,000, $50,000, $250,000 and $1,000,000, on the better of Jupiter&apos;s two routes, and scores the largest size that leaves for under 1%. Many tokens are filled by market makers answering a request, not by pools; their pools can be nearly empty while $250,000 leaves for half a percent. Until v4.0 Trova read pool depth alone and rated those tokens as if they could not be left.</P>
+            <Table head={["Score", "Largest size leaving under 1%"]} num={[0, 1]} rows={[
+              [0, "None measured"],
+              [25, usd(500)],
+              [50, usd(5_000)],
+              [75, usd(50_000)],
+              [90, usd(250_000)],
+              [100, usd(1_000_000)],
+            ]} />
+            <P>Where no measurement is stored for a token yet, its pool depth is scored instead, against the anchors below.</P>
+            <Table head={["Score", "Pool depth", "Holders", "Trades · 24h", "Volume · 24h"]} num={[0, 1, 2, 3, 4]} rows={[
               [0, usd(10_000), 10, 1, usd(100)],
               [25, usd(140_000), 400, 40, usd(5_000)],
               [50, usd(300_000), cnt(2_000), cnt(2_500), usd(150_000)],
@@ -246,8 +256,9 @@ export default async function DocsPage() {
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <H2 id="leave" n={9}>Cost to leave</H2>
-            <P>“What it costs to leave” is measured, not modelled: Trova quotes buying the token with USDC through Jupiter and selling it straight back, at $5,000, $50,000 and $250,000. Before you buy, the trade sheet does the same at your size. A failed quote is shown as <i>unavailable</i> — never as “you can&apos;t get out”.</P>
-            <P>A token is <b style={{ color: "var(--ink)" }}>tradable</b> when it has at least $50k of liquidity, traded in the last 24 hours, and carries no compromised or blocked advisory.</P>
+            <P>“What it costs to leave” is measured, not modelled: Trova quotes buying the token with USDC through Jupiter and selling it straight back, on the better of Jupiter&apos;s two routes, and says whether pools or a market maker filled it. The measurement is stored every day, and you can quote any size yourself on a token&apos;s page. Before you buy, the trade sheet does the same at your size.</P>
+            <P>Three answers are never confused: <i>no route</i> is a finding about the token; <i>unavailable</i> means Jupiter could not be reached; and <i>shut</i> means the token does not trade while the US market is closed — a fact about the hour, shown as such and never as a loss.</P>
+            <P>A token is <b style={{ color: "var(--ink)" }}>tradable</b> when a measured $5,000 round trip costs under 5% and it carries no compromised or blocked advisory. A token with no stored measurement is judged the old way: at least $50k of pool depth and a trade in the last 24 hours.</P>
           </section>
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>

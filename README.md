@@ -15,7 +15,7 @@ Tokenized equity has failed its holders before, and the failures were about righ
 - **FTX (2022).** FTX's site said its stock tokens could be redeemed for the underlying shares; its own terms said buyers had no claim to delivery of the underlying. When FTX collapsed, holders were stuck.
 - **"OpenAI tokens" (2025).** OpenAI publicly stated that tokens sold under its name were *not* OpenAI equity — exposure through a special-purpose vehicle, issued without its approval.
 
-Market-only risk scores miss this. tokens.xyz's own market score rates Tesla, SpaceX and OpenAI tokens alike as *A 100 / "Established"*, because all four of its inputs are market metrics. Trova shows it beside ours — never blended in — and adds the half they leave out: what you own.
+Market-only risk scores miss this. tokens.xyz's own market score rates Tesla, SpaceX and OpenAI tokens alike as *A / "Established"* (97 to 100), because all four of its inputs are market metrics. Trova shows it beside ours — never blended in — and adds the half they leave out: what you own.
 
 ## What Trova does
 
@@ -24,7 +24,7 @@ Market-only risk scores miss this. tokens.xyz's own market score rates Tesla, Sp
 | **Rates every token** | ~560 tokenized stocks, ETFs, metals and private-company tokens, re-scored daily. Every rating shows its working. |
 | **Reads your wallet** | Paste or connect a wallet: holdings, a value-weighted **Trova Portfolio Score**, what needs attention, and what selling each holding would return *right now*. |
 | **Knows which one you hold** | Open a company from a holding and Trova leads with *your* token — and, if it isn't the soundest, the sounder one of the same company, side by side. |
-| **Measures the exit** | "Cost to leave" is a real round trip quoted through Jupiter — buy, then sell straight back — not a model. |
+| **Measures the exit** | "Cost to leave" is a real round trip quoted through Jupiter — buy, then sell straight back — on the better of its two routes (pools, or a market maker's quote). Measured and stored daily, not modelled. |
 | **Acts** | Buy, move from a weak token to a sound one, or sell back to USDC. One signature, from your own wallet. |
 | **Watches for change** | Daily snapshots; a rating or tradability change must hold for three days before it alerts you. |
 
@@ -39,7 +39,7 @@ Two questions, asked of every token, and nothing else.
 | Redemption | 70% | Redeems for the share **100** · for its cash value **75** · not reported **50** (or the most conservative value its class reports) · not redeemable **30** |
 | What it entitles you to | 30% | Full economic exposure **100** · leveraged **40** · pre-IPO / SPV exposure **0** |
 
-**Exit — can you get back out?** The mean of liquidity (market depth), activity (trades and volume), holders, and fill quality (when reported). Each is scored against fixed calibration anchors taken from tradable tokens, so 50 means "the median tradable token".
+**Exit — can you get back out?** The mean of depth, activity (trades and volume), holders, and fill quality (when reported). Depth is the largest size measured to round-trip for under 1%; a token with no stored measurement is scored on pool depth instead. Each is scored against fixed anchors, so 50 means "the median tradable token".
 
 **Combined:** `Trova Score = √(Ownership × Exit)` — multiplied, not averaged, so a busy market cannot hide that you own nothing, and perfect paperwork cannot hide a dead market.
 
@@ -55,7 +55,7 @@ Two questions, asked of every token, and nothing else.
 - **The only caps** are tokens.xyz advisories: caution caps at 50, compromised at 15, blocked hides the token.
 - **Price never enters the score.** Prices, price gaps and liquidity tier are shown as facts only.
 - **Confidence** (high / medium / low) says how many key inputs are reported. Missing information lowers confidence; it never quietly improves a rating.
-- **Tradable** means at least $50k of liquidity, traded in the last 24 hours, and no compromised or blocked advisory.
+- **Tradable** means a measured $5,000 round trip costs under 5%, with no compromised or blocked advisory. Unmeasured tokens: at least $50k of pool depth and a trade in the last 24 hours.
 - **Speculative.** Pre-IPO / SPV tokens are always labelled *Speculative*, everywhere they appear, with the issuer's own caveat.
 
 The full method — with worked examples — is at **[/docs](https://trovascore.vercel.app/docs)**.
@@ -107,6 +107,7 @@ pnpm dev                            # http://localhost:3000
 ```bash
 pnpm verify          # scoring rubric + change-signal checks
 pnpm snapshot:dry    # score every token without writing
+pnpm measure         # quote and store today's exit measurements (resumable)
 pnpm snapshot        # write today's snapshot to Supabase
 ```
 
