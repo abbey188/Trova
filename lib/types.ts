@@ -191,12 +191,17 @@ export interface CorporateAction {
 
 /** What a round trip costs at a given size, quoted through Jupiter both ways. */
 export interface ExitQuote {
-  /** "ok" measured, "no-route" cannot be sold at this size, "unavailable" we could not reach Jupiter. */
-  status: "ok" | "no-route" | "unavailable";
+  /** "ok" measured, "no-route" cannot be sold at this size, "unavailable" we could not reach Jupiter,
+   *  "market-closed" the token does not trade while the US market is shut. */
+  status: "ok" | "no-route" | "unavailable" | "market-closed";
   roundTripPct: number | null;
   routable: boolean;
   usdSize: number;
   routeLabels: string[];
+  /** What filled the exit: on-chain pools or a market maker's quote. */
+  liquidity?: "pools" | "market-maker" | null;
+  /** The same round trip through pools alone, when pools could quote it. */
+  poolsRoundTripPct?: number | null;
 }
 
 export interface Variant {
@@ -244,7 +249,7 @@ export interface Holding {
   /** Measured cost to leave this position at its current size. */
   exitQuote?: ExitQuote | null;
   /** What selling this exact balance returns right now, one way to USDC. The holder's number. */
-  sellNow?: { status: "ok" | "no-route" | "unavailable"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[] } | null;
+  sellNow?: { status: "ok" | "no-route" | "unavailable" | "market-closed"; receivedUsd: number | null; lossPct: number | null; routeLabels: string[]; liquidity?: "pools" | "market-maker" | null } | null;
   /** Daily rating history for the held variant, oldest first. */
   history?: VariantHistory | null;
   /** Exact on-chain balance in base units (unscaled) and the mint's decimals — what a swap of the whole position needs. */

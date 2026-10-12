@@ -8,15 +8,22 @@
 // then crawls on backoff. Hence a pacer, a cache, and 429 backoff that honours x-ratelimit-reset.
 // developers.jup.ag/portal sells more (Developer is 10 req/s).
 //
-// We quote through /swap/v1. The newer /swap/v2/order (api.jup.ag only) aggregates more routers,
-// but measured head to head on 2026-09-22 it was 0.04–0.10% WORSE on TSLAx and SPCX, and it charges
-// its own platform fee, so there is nothing to gain for measurement. If we ever move execution to
-// v2 note that the referral parameters are renamed: `referralAccount` / `referralFee`, not
-// `feeAccount` / `platformFeeBps`.
+// TWO routes, and a measurement has to ask both. /swap/v1 routes through on-chain pools only.
+// /swap/v2/order (api.jup.ag, key required) also asks market makers for a quote (router "jupiterz").
+// Until 2026-10-12 we asked v1 alone, on the strength of a 2026-09-22 comparison of TSLAx and SPCX —
+// two pool-filled tokens, where v1 is 0.04–0.10% better because v2 charges 10 bps. That missed every
+// token whose liquidity is NOT in pools: measured 2026-10-11, a $50,000 round trip in TSLAon cost
+// 98.8% on v1 and 0.47% on v2, and the same held for NVDAon, AAPLon and SPCXon. Ondo tokens are
+// filled by market makers, and their pools are close to empty. The reverse also happens: for 72
+// xStocks tokens v2 answered "Quote not available from market maker" while v1 found a pool. So
+// `bestQuote` asks both and keeps the larger amount out. v2 also says when a token cannot be traded
+// because the US market is shut, which is a fourth answer and must never be shown as a loss.
+// Referral on v2 is `referralAccount` / `referralFee`, not `feeAccount` / `platformFeeBps`.
 
 const KEY = process.env.JUPITER_API_KEY?.trim();
 const BASE = KEY ? "https://api.jup.ag/swap/v1" : "https://lite-api.jup.ag/swap/v1";
 const AUTH: HeadersInit = KEY ? { "x-api-key": KEY } : {};
+const ORDER_BASE = KEY ? "https://api.jup.ag/swap/v2" : null;
 
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_DECIMALS = 6;
@@ -39,7 +46,15 @@ interface RawQuote extends Record<string, unknown> {
   inputMint?: string; outputMint?: string; inAmount?: string; outAmount?: string;
   priceImpactPct?: string; slippageBps?: number; error?: string;
   routePlan?: { swapInfo?: { label?: string } }[];
+  // /swap/v2/order only
+  router?: string; swapType?: string; transaction?: string | null; requestId?: string;
 }
+
+/** Where the liquidity behind a quote sits: on-chain pools, or a market maker answering a request. */
+export type Liquidity = "pools" | "market-maker";
+/** Why there is no quote. "market-closed" is Jupiter saying the token does not trade while the US
+ *  market is shut — a fact about the hour, not about the token's depth. */
+export type NoQuote = "no-route" | "unavailable" | "market-closed";
 
 /** Referral, from env. Without a fee account Jupiter is asked for no platform fee at all. */
 export function referral(): { feeAccount?: string; platformFeeBps?: number } {
@@ -51,7 +66,8 @@ export function referral(): { feeAccount?: string; platformFeeBps?: number } {
   return { feeAccount, platformFeeBps: Math.min(bps, 100) };
 }
 
-type Fetched = { ok: true; body: RawQuote } | { ok: false; reason: "no-route" | "unavailable" };
+type Fetched = { ok: true; body: RawQuote } | { ok: false; reason: NoQuote };
+const MARKET_CLOSED = /outside of market hours/i;
 
 // Quotes move on market time, not page time — a minute-old exit cost is still true, and caching is
 // what keeps us inside the rate limit.
@@ -132,13 +148,14 @@ async function getJson(url: string, { fresh = false }: { fresh?: boolean } = {})
       if (res.ok) {
         const body = (await res.json()) as RawQuote;
         const out: Fetched = body.error || !body.outAmount
-          ? { ok: false, reason: "no-route" }
+          ? { ok: false, reason: MARKET_CLOSED.test(body.error ?? "") ? "market-closed" : "no-route" }
           : { ok: true, body };
         cache.set(url, { at: Date.now(), value: out });
         return out;
       }
       if (res.status >= 400 && res.status < 500) {
-        const out: Fetched = { ok: false, reason: "no-route" };
+        const text = await res.text().catch(() => "");
+        const out: Fetched = { ok: false, reason: MARKET_CLOSED.test(text) ? "market-closed" : "no-route" };
         cache.set(url, { at: Date.now(), value: out });
         return out;
       }
@@ -172,7 +189,7 @@ export async function quoteDetailed(
   outputMint: string,
   rawAmount: string | number,
   { slippageBps = 50, withFee = false, fresh = false }: { slippageBps?: number; withFee?: boolean; fresh?: boolean } = {},
-): Promise<{ ok: true; quote: Quote } | { ok: false; reason: "no-route" | "unavailable" }> {
+): Promise<{ ok: true; quote: Quote } | { ok: false; reason: NoQuote }> {
   const params = new URLSearchParams({
     inputMint, outputMint, amount: String(rawAmount), slippageBps: String(slippageBps),
   });
@@ -195,10 +212,87 @@ export async function quoteDetailed(
   } };
 }
 
+export interface OrderQuote {
+  inAmount: string;
+  outAmount: string;
+  liquidity: Liquidity;
+  routeLabels: string[];
+  /** Present only when a taker was given: the transaction for that wallet to sign, and the id
+   *  Jupiter needs to execute it. */
+  transaction: string | null;
+  requestId: string | null;
+}
+
+/**
+ * One quote from the order route, which asks market makers as well as pools. Without a taker it is a
+ * quote only. Needs the API key; without one it answers "unavailable" and callers fall back to pools.
+ */
+export async function orderQuote(
+  inputMint: string,
+  outputMint: string,
+  rawAmount: string | number,
+  { taker, fresh = false }: { taker?: string; fresh?: boolean } = {},
+): Promise<{ ok: true; quote: OrderQuote } | { ok: false; reason: NoQuote }> {
+  if (!ORDER_BASE) return { ok: false, reason: "unavailable" };
+  const params = new URLSearchParams({ inputMint, outputMint, amount: String(rawAmount) });
+  if (taker) params.set("taker", taker);
+  const fetched = await getJson(`${ORDER_BASE}/order?${params}`, { fresh: fresh || !!taker });
+  if (!fetched.ok) return fetched;
+  const raw = fetched.body;
+  return { ok: true, quote: {
+    inAmount: raw.inAmount ?? String(rawAmount),
+    outAmount: raw.outAmount!,
+    liquidity: raw.swapType === "rfq" || raw.router === "jupiterz" ? "market-maker" : "pools",
+    routeLabels: (raw.routePlan ?? []).map((r) => r.swapInfo?.label).filter((l): l is string => !!l),
+    transaction: raw.transaction ?? null,
+    requestId: raw.requestId ?? null,
+  } };
+}
+
+export interface BestQuote {
+  outAmount: string;
+  /** Which route produced it: the pool route (/swap/v1) or the order route (/swap/v2/order). */
+  route: "pools" | "order";
+  liquidity: Liquidity;
+  routeLabels: string[];
+  /** The pool route's own answer, when it had one — kept so a page can say what pools alone give. */
+  pool: Quote | null;
+}
+
+/**
+ * The better of the two routes for one leg. Both are asked, because neither contains the other:
+ * market makers fill tokens whose pools are empty, and pools fill tokens no market maker quotes.
+ * With no quote, "market-closed" wins over "no-route" (the order route is the one that knows), and
+ * a route we could not reach leaves the answer "unavailable" rather than a false "no route".
+ */
+export async function bestQuote(
+  inputMint: string,
+  outputMint: string,
+  rawAmount: string | number,
+  { slippageBps = 50 }: { slippageBps?: number } = {},
+): Promise<{ ok: true; quote: BestQuote } | { ok: false; reason: NoQuote }> {
+  const [pool, order] = await Promise.all([
+    quoteDetailed(inputMint, outputMint, rawAmount, { slippageBps }),
+    orderQuote(inputMint, outputMint, rawAmount),
+  ]);
+  const poolQuote = pool.ok ? pool.quote : null;
+  if (order.ok && (!poolQuote || BigInt(order.quote.outAmount) > BigInt(poolQuote.outAmount))) {
+    return { ok: true, quote: { outAmount: order.quote.outAmount, route: "order", liquidity: order.quote.liquidity, routeLabels: order.quote.routeLabels, pool: poolQuote } };
+  }
+  if (poolQuote) {
+    return { ok: true, quote: { outAmount: poolQuote.outAmount, route: "pools", liquidity: "pools", routeLabels: poolQuote.routeLabels, pool: poolQuote } };
+  }
+  // Without a key the order route was never asked, so its "unavailable" says nothing: pools decide.
+  if (!ORDER_BASE) return { ok: false, reason: pool.ok ? "no-route" : pool.reason };
+  const reasons = [pool.ok ? null : pool.reason, order.ok ? null : order.reason];
+  return { ok: false, reason: reasons.includes("market-closed") ? "market-closed" : reasons.includes("unavailable") ? "unavailable" : "no-route" };
+}
+
 export interface ExitCost {
   /** "ok" measured it, "no-route" means you could not get out at this size, "unavailable" means we
-   *  could not reach Jupiter — which is NOT the same claim and must not be shown as one. */
-  status: "ok" | "no-route" | "unavailable";
+   *  could not reach Jupiter — which is NOT the same claim and must not be shown as one — and
+   *  "market-closed" means the token does not trade while the US market is shut. */
+  status: "ok" | NoQuote;
   /** What a round trip costs, as a percentage of the amount put in. */
   roundTripPct: number | null;
   /** True only when a round trip was actually quoted. */
@@ -207,32 +301,70 @@ export interface ExitCost {
   blockedOn?: "in" | "out";
   routeLabels: string[];
   usdSize: number;
+  /** What filled the way OUT — pools or a market maker. Null when nothing was quoted. */
+  liquidity: Liquidity | null;
+  /** The same round trip through pools alone, when pools could quote it. For a market-maker-filled
+   *  token this is the number Trova used to report, and it can be 200 times the real one. */
+  poolsRoundTripPct: number | null;
 }
 
 /**
  * What it costs to get into a token and back out at a given size, measured rather than estimated:
- * buy it with USDC, then quote selling the whole result back. Measured 2026-09-22 — TSLAx 0.05% at
- * $4,661, OPENAI 2.20% at $1,366, and CLSKx 99.99% at $504, because selling it returns seven cents.
+ * buy it with USDC, then quote selling the whole result back, each leg on the better route.
+ * Measured 2026-09-22 — TSLAx 0.05% at $4,661, OPENAI 2.20% at $1,366, and CLSKx 99.99% at $504,
+ * because selling it returns seven cents. Measured 2026-10-11 — TSLAon 0.42% at $500 through a
+ * market maker, against 12.8% through its pools.
  */
 export async function exitCost(mint: string, usdSize: number, slippageBps = 100): Promise<ExitCost> {
   const size = Math.max(1, Math.round(usdSize));
-  const empty: ExitCost = { status: "unavailable", roundTripPct: null, routable: false, routeLabels: [], usdSize: size };
+  const empty: ExitCost = { status: "unavailable", roundTripPct: null, routable: false, routeLabels: [], usdSize: size, liquidity: null, poolsRoundTripPct: null };
   if (mint === USDC_MINT) return { ...empty, status: "ok", roundTripPct: 0, routable: true };
+  const pct = (rawBack: string) => ((size - Number(rawBack) / 10 ** USDC_DECIMALS) / size) * 100;
 
-  const inLeg = await quoteDetailed(USDC_MINT, mint, size * 10 ** USDC_DECIMALS, { slippageBps });
+  const inLeg = await bestQuote(USDC_MINT, mint, size * 10 ** USDC_DECIMALS, { slippageBps });
   if (!inLeg.ok) return { ...empty, status: inLeg.reason, blockedOn: "in" };
 
-  const outLeg = await quoteDetailed(mint, USDC_MINT, inLeg.quote.outAmount, { slippageBps });
-  if (!outLeg.ok) return { ...empty, status: outLeg.reason, blockedOn: "out", routeLabels: inLeg.quote.routeLabels };
+  const outLeg = await bestQuote(mint, USDC_MINT, inLeg.quote.outAmount, { slippageBps });
 
-  const back = Number(outLeg.quote.outAmount) / 10 ** USDC_DECIMALS;
+  // Pools alone, for comparison. When the buy leg was filled by pools the sale of that same amount
+  // through pools is already in hand; otherwise it is one more quote.
+  let poolsRoundTripPct: number | null = null;
+  const poolIn = inLeg.quote.pool;
+  if (poolIn) {
+    const poolOut = inLeg.quote.route === "pools" && outLeg.ok
+      ? outLeg.quote.pool
+      : await quote(mint, USDC_MINT, poolIn.outAmount, { slippageBps });
+    if (poolOut) poolsRoundTripPct = pct(poolOut.outAmount);
+  }
+
+  if (!outLeg.ok) return { ...empty, status: outLeg.reason, blockedOn: "out", routeLabels: inLeg.quote.routeLabels, poolsRoundTripPct };
+
   return {
     status: "ok",
-    roundTripPct: ((size - back) / size) * 100,
+    roundTripPct: pct(outLeg.quote.outAmount),
     routable: true,
     routeLabels: [...new Set([...inLeg.quote.routeLabels, ...outLeg.quote.routeLabels])],
     usdSize: size,
+    liquidity: outLeg.quote.liquidity,
+    poolsRoundTripPct,
   };
+}
+
+/**
+ * The exit ceiling at a threshold, as the bracket that was actually quoted: the largest size that
+ * left for under `thresholdPct`, and the smallest size above it that did not. Nothing is modelled or
+ * interpolated — "under 1% up to at least $50,000, over 1% by $250,000" is all a ladder can say.
+ */
+export function exitCeiling(ladder: Pick<ExitCost, "status" | "roundTripPct" | "usdSize">[], thresholdPct: number): { underUsd: number | null; overUsd: number | null } {
+  const rungs = ladder.filter((r) => r.status === "ok" || r.status === "no-route").sort((a, b) => a.usdSize - b.usdSize);
+  let underUsd: number | null = null;
+  let overUsd: number | null = null;
+  for (const r of rungs) {
+    const under = r.status === "ok" && r.roundTripPct != null && r.roundTripPct < thresholdPct;
+    if (under && overUsd == null) underUsd = r.usdSize;
+    else if (!under && overUsd == null) overUsd = r.usdSize;
+  }
+  return { underUsd, overUsd };
 }
 
 /** Exit cost across several sizes — what the asset page shows as "what it costs to leave". */
@@ -243,16 +375,19 @@ export async function exitLadder(mint: string, sizes: number[] = [5_000, 50_000,
 }
 
 export interface SellNow {
-  status: "ok" | "no-route" | "unavailable";
+  status: "ok" | NoQuote;
   /** USDC you would receive for the whole position right now. */
   receivedUsd: number | null;
   /** How much of the position's value the sale gives up, in %. */
   lossPct: number | null;
   routeLabels: string[];
+  /** What would fill the sale — pools or a market maker. */
+  liquidity: Liquidity | null;
 }
 
 /**
- * What selling a position you ALREADY hold returns right now: the whole balance, one way, to USDC.
+ * What selling a position you ALREADY hold returns right now: the whole balance, one way, to USDC,
+ * on the better of the two routes.
  *
  * For a holder this is the true number. A round trip (exitCost) also pays the buy leg, which in a
  * thin market dominates — TSLAon's $1,200 round trip costs 97.7%, but most of that is buying INTO
@@ -260,11 +395,11 @@ export interface SellNow {
  * portfolio shows this.
  */
 export async function sellNow(mint: string, rawAmount: bigint, valueUsd: number, slippageBps = 100): Promise<SellNow> {
-  const empty: SellNow = { status: "unavailable", receivedUsd: null, lossPct: null, routeLabels: [] };
-  if (mint === USDC_MINT) return { status: "ok", receivedUsd: valueUsd, lossPct: 0, routeLabels: [] };
+  const empty: SellNow = { status: "unavailable", receivedUsd: null, lossPct: null, routeLabels: [], liquidity: null };
+  if (mint === USDC_MINT) return { ...empty, status: "ok", receivedUsd: valueUsd, lossPct: 0 };
   if (rawAmount <= 0n) return { ...empty, status: "no-route" };
 
-  const leg = await quoteDetailed(mint, USDC_MINT, rawAmount.toString(), { slippageBps });
+  const leg = await bestQuote(mint, USDC_MINT, rawAmount.toString(), { slippageBps });
   if (!leg.ok) return { ...empty, status: leg.reason };
   const receivedUsd = Number(leg.quote.outAmount) / 10 ** USDC_DECIMALS;
   return {
@@ -272,6 +407,7 @@ export async function sellNow(mint: string, rawAmount: bigint, valueUsd: number,
     receivedUsd,
     lossPct: valueUsd > 0 ? Math.max(0, ((valueUsd - receivedUsd) / valueUsd) * 100) : null,
     routeLabels: leg.quote.routeLabels,
+    liquidity: leg.quote.liquidity,
   };
 }
 

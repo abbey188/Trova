@@ -10,6 +10,7 @@
     "verify:scoring": "tsx scripts/verify-scoring.ts",
     "verify:signals": "tsx scripts/verify-signals.ts",
     "verify": "tsx scripts/verify-scoring.ts && tsx scripts/verify-signals.ts",
+    "verify:exit": "tsx --env-file=.env.local scripts/verify-exit.ts",
     "snapshot": "tsx --env-file=.env.local scripts/snapshot.ts",
     "snapshot:dry": "tsx --env-file=.env.local scripts/snapshot.ts --dry-run",
     "rescore": "tsx --env-file=.env.local scripts/rescore.ts"
