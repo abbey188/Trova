@@ -199,8 +199,11 @@ export async function marketSnapshots(mints: string[]) {
  *  override this upstream when it confirms the issuer. */
 export function resolveIssuer(v: TxzVariant): string {
   if (v.issuer) return v.issuer;
-  if (v.label) return v.label;
-  const tag = v.tags?.find((t) => !t.startsWith("curated:"));
+  // Some variants carry their own ticker as the label ("RACE", "HIMS" — 42 of 572 on 2026-10-10).
+  // That names the token, not who issued it.
+  const names = (s: string) => s.trim().toUpperCase() !== v.symbol.trim().toUpperCase();
+  if (v.label && names(v.label)) return v.label;
+  const tag = v.tags?.find((t) => !t.startsWith("curated:") && names(t));
   if (tag) return tag;
   // Issuer symbol conventions: xStocks "TSLAx", Ondo "TSLAon".
   if (/[A-Z]on$/.test(v.symbol)) return "Ondo";

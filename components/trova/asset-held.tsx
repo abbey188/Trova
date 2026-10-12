@@ -115,9 +115,11 @@ const gradeBg = (v: AssetVariantView) => `var(--grade-${v.score.grade === "NR" ?
 
 function LeaveCell({ mint }: { mint: string }) {
   const q = useQuery({ queryKey: ["exit", mint], queryFn: () => api<Ladder>(`/api/exit?mint=${mint}`), staleTime: 120_000 });
-  const r = q.data?.ladder[0];
+  // The $5,000 round trip — the rung the "tradable" rule reads — whichever sizes were measured.
+  const r = q.data?.ladder.find((x) => x.usdSize === 5_000) ?? q.data?.ladder[0];
   if (q.isPending) return <span className="animate-pulse" style={{ display: "inline-block", width: 48, height: 12, borderRadius: 6, background: "var(--track)" }} />;
   if (!r || r.status === "unavailable") return <span style={{ color: "var(--ink-faint)" }}>—</span>;
+  if (r.status === "market-closed") return <span style={{ color: "var(--ink-soft)", fontWeight: 700 }}>Shut now</span>;
   if (r.status !== "ok") return <span style={{ color: "var(--danger)", fontWeight: 700 }}>No route</span>;
   const v = r.roundTripPct ?? 0;
   return <span style={{ ...NUM, fontWeight: 700, color: v >= 10 ? "var(--danger)" : v >= 1 ? "var(--grade-c)" : "var(--grade-a)" }}>{v < 0.01 ? "<0.01" : v.toFixed(2)}%</span>;

@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { CompareButton, HeldCard } from "@/components/trova/asset-held";
+import { ControlsCard, ExitCard, LenderCard, ruleRung, useExit } from "@/components/trova/exit-cards";
 import { HelpButton } from "@/components/trova/frame";
 import { ArrowLink, CompanyLogo, DISPLAY, GradePill, Icon, Label, NUM, Panel, PillarBar, ScoreRing, WhyButton } from "@/components/trova/kit";
 import { PriceChart, RangeTabs, useRangeSeries, type RangeKey } from "@/components/trova/price-chart";
@@ -236,7 +237,9 @@ function ListedDesktop({ detail, top, others, ctx }: { detail: AssetDetail; top?
         {ctx.heldWeaker && top && <HeldCard detail={detail} held={ctx.heldWeaker} top={top} swapFrom={ctx.swapFrom} />}
         {top && <TopTokenCard detail={detail} top={top} only={others.length === 0} holds={ctx.holdsTop} alternative={!!ctx.heldWeaker} />}
         {others.length > 0 ? <CompareButton detail={detail} all={all} heldMint={ctx.held?.variant.mint} /> : <NothingToCompare name={detail.asset.name} />}
-        {top && <ExitCard mint={top.mint} />}
+        {top && <ExitCard mint={top.mint} heldUsd={ctx.held?.variant.mint === top.mint ? ctx.held.valueUsd : null} />}
+        {top && <ControlsCard top={top} />}
+        {top && <LenderCard mint={top.mint} gap={detail.weekendGap} />}
       </aside>
     </main>
   );
@@ -346,8 +349,8 @@ function AboutCard({ detail }: { detail: AssetDetail }) {
 
 function TopTokenCard({ detail, top, only, compact, holds, alternative }: { detail: AssetDetail; top: AssetVariantView; only?: boolean; compact?: boolean; holds?: boolean; alternative?: boolean }) {
   const s = top.score;
-  const exit = useQuery({ queryKey: ["exit", top.mint], queryFn: () => api<{ ladder: { usdSize: number; status: string; roundTripPct: number | null }[] }>(`/api/exit?mint=${top.mint}`), staleTime: 120_000 });
-  const leave = exit.data?.ladder[0];
+  const exit = useExit(top.mint);
+  const leave = ruleRung(exit.data?.ladder);
   const why = `/asset/${encodeURIComponent(detail.asset.assetId)}/rating/${top.mint}`;
   return (
     <Panel accent="good" style={{ padding: compact ? "15px 16px" : "17px 19px", borderRadius: compact ? 17 : 16 }}>
@@ -465,34 +468,6 @@ function BenefitsCard({ top }: { top: AssetVariantView }) {
   );
 }
 
-function ExitCard({ mint }: { mint: string }) {
-  const q = useQuery({ queryKey: ["exit", mint], queryFn: () => api<{ ladder: { usdSize: number; status: string; roundTripPct: number | null }[] }>(`/api/exit?mint=${mint}`), staleTime: 120_000 });
-  const rungs = q.data?.ladder ?? [];
-  const worst = Math.max(5, ...rungs.map((r) => r.roundTripPct ?? 0));
-  const quarter = rungs.find((r) => r.usdSize === 250_000);
-  return (
-    <Panel style={{ padding: "16px 18px" }}>
-      <Label>What it costs to leave</Label>
-      <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 12 }}>
-        {q.isPending ? [0, 1, 2].map((i) => <div key={i} className="animate-pulse" style={{ height: 14, borderRadius: 6, background: "var(--track)" }} />)
-          : rungs.map((r) => {
-            const v = r.roundTripPct ?? 0;
-            const color = r.status !== "ok" || v >= 10 ? "var(--danger)" : v >= 1 ? "var(--grade-b)" : "var(--grade-a)";
-            return (
-              <div key={r.usdSize} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 12, color: "var(--ink-soft)", width: 58 }}>${r.usdSize.toLocaleString("en-US")}</span>
-                <div style={{ flexGrow: 1, height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" }}><div style={{ width: r.status === "ok" ? `${Math.max(2, (v / worst) * 100)}%` : "100%", height: 6, background: color }} /></div>
-                <span style={{ ...NUM, fontSize: 12, fontWeight: 700, width: 54, textAlign: "right", color: r.status === "ok" ? "var(--ink)" : "var(--danger)" }}>{r.status === "ok" ? `${v.toFixed(2)}%` : r.status === "no-route" ? "No route" : "—"}</span>
-              </div>
-            );
-          })}
-      </div>
-      <p style={{ margin: "11px 0 0", fontSize: 11, lineHeight: 1.5, color: "var(--ink-faint)" }}>
-        {q.isError ? "Couldn't reach Jupiter just now — this says nothing about whether you can sell." : `Quoted both ways through Jupiter just now.${quarter?.status === "ok" && (quarter.roundTripPct ?? 99) < 2 ? " You could leave a quarter of a million under 2%." : ""}`}
-      </p>
-    </Panel>
-  );
-}
 
 
 
@@ -676,6 +651,7 @@ function PrivateDesktop({ detail, top, others }: { detail: AssetDetail; top?: As
         )}
 
         {top && <ExitCard mint={top.mint} />}
+        {top && <ControlsCard top={top} />}
 
         <section style={{ background: "var(--warn-soft)", border: "1px solid var(--grade-c-bg)", borderRadius: 18, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: "var(--grade-c)" }}>Speculative · pre-IPO exposure</span>
@@ -784,7 +760,9 @@ function AssetMobile({ detail, top, others, priv, swapFrom, options, ctx }: { de
           </section>
         )}
         {others.length === 0 && <NothingToCompare name={asset.name} />}
-        {top && <ExitCard mint={top.mint} />}
+        {top && <ExitCard mint={top.mint} heldUsd={ctx.held?.variant.mint === top.mint ? ctx.held.valueUsd : null} />}
+        {top && <ControlsCard top={top} />}
+        {top && !priv && <LenderCard mint={top.mint} gap={detail.weekendGap} />}
         {detail.about && (
           <section style={{ background: "var(--surface)", borderRadius: 17, padding: "15px 16px" }}>
             <Label>About {asset.name}</Label>

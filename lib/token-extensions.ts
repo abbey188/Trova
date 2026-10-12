@@ -15,6 +15,7 @@
 //     position reads as a tenth of its worth.
 
 import { heliusRpc, TOKEN_2022_PROGRAM } from "./helius";
+import type { IssuerControls } from "./types";
 
 export interface ScaledUiAmount {
   /** The multiplier in force right now. */
@@ -32,10 +33,89 @@ interface MintAccount {
   data?: {
     parsed?: {
       info?: {
+        mintAuthority?: string | null;
+        freezeAuthority?: string | null;
         extensions?: { extension: string; state?: Record<string, unknown> }[];
       };
     };
   };
+}
+
+interface TransferFee { epoch?: number; transferFeeBasisPoints?: number }
+
+/**
+ * The issuer's on-chain powers over one mint. Read literally, because the difference matters:
+ * verified on mainnet 2026-10-11, every xStocks, Ondo, Backpack and PreStocks mint carries a
+ * default-account-state setting whose VALUE is "initialized" (accounts are not frozen by default),
+ * and a transfer-hook slot with NO program attached. Reporting the presence of the extension as
+ * "default-frozen" or "has a transfer hook" would be wrong. Also verified: xStocks, Backpack and
+ * PreStocks mints have a permanent delegate, Ondo mints do not; PreStocks charges 1% per transfer.
+ */
+function parseControls(account: MintAccount | null, epoch: number | null): IssuerControls | null {
+  const info = account?.data?.parsed?.info;
+  if (!account || !info) return null;
+  const ext = new Map((info.extensions ?? []).map((e) => [e.extension, e.state ?? {}]));
+
+  const fee = ext.get("transferFeeConfig") as { olderTransferFee?: TransferFee; newerTransferFee?: TransferFee } | undefined;
+  // The newer fee applies from its epoch on; before that the older one is still in force.
+  const inForce = fee ? (epoch != null && fee.newerTransferFee?.epoch != null && epoch < fee.newerTransferFee.epoch ? fee.olderTransferFee : fee.newerTransferFee) : undefined;
+  const hook = ext.get("transferHook") as { programId?: string | null } | undefined;
+  const state = ext.get("defaultAccountState") as { accountState?: string } | undefined;
+  const pause = ext.get("pausableConfig") as { paused?: boolean } | undefined;
+
+  return {
+    token2022: account.owner === TOKEN_2022_PROGRAM,
+    canMint: Boolean(info.mintAuthority),
+    canFreeze: Boolean(info.freezeAuthority),
+    canSeize: Boolean((ext.get("permanentDelegate") as { delegate?: string | null } | undefined)?.delegate),
+    canPause: pause != null,
+    paused: pause?.paused === true,
+    newAccountsFrozen: state ? state.accountState === "frozen" : null,
+    hookSlot: hook != null,
+    hookProgram: hook?.programId ?? null,
+    transferFeeBps: fee ? Number(inForce?.transferFeeBasisPoints ?? 0) : null,
+  };
+}
+
+let epochCache: { at: number; epoch: number } | null = null;
+async function currentEpoch(): Promise<number | null> {
+  if (epochCache && Date.now() - epochCache.at < 10 * 60_000) return epochCache.epoch;
+  try {
+    const res = await heliusRpc<{ epoch: number }>("getEpochInfo", []);
+    epochCache = { at: Date.now(), epoch: res.epoch };
+    return res.epoch;
+  } catch {
+    return epochCache?.epoch ?? null;
+  }
+}
+
+export interface MintFacts { scaled: ScaledUiAmount | null; controls: IssuerControls | null }
+
+/**
+ * Everything Trova reads off a mint account, in one pass: the scaled-UI multiplier and the issuer's
+ * controls. Never throws — a failed batch leaves those mints out of the map.
+ */
+export async function getMintFacts(mints: string[]): Promise<Map<string, MintFacts>> {
+  const out = new Map<string, MintFacts>();
+  const unique = [...new Set(mints)];
+  if (unique.length === 0) return out;
+  const now = Date.now();
+  const epoch = await currentEpoch();
+
+  for (let i = 0; i < unique.length; i += BATCH) {
+    const batch = unique.slice(i, i + BATCH);
+    let accounts: (MintAccount | null)[];
+    try {
+      const res = await heliusRpc<{ value: (MintAccount | null)[] }>("getMultipleAccounts", [batch, { encoding: "jsonParsed" }]);
+      accounts = res.value ?? [];
+    } catch {
+      continue;
+    }
+    accounts.forEach((account, j) => {
+      out.set(batch[j], { scaled: parse(account, now), controls: parseControls(account, epoch) });
+    });
+  }
+  return out;
 }
 
 const BATCH = 90; // getMultipleAccounts caps at 100 addresses

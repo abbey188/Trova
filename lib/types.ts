@@ -204,6 +204,29 @@ export interface CorporateAction {
   pending: boolean;              // a different multiplier is queued for a future date
 }
 
+/**
+ * What the issuer can do to a token on-chain, read from the mint account itself (Token-2022
+ * extensions and the two classic authorities). Facts about the token's design, stated neutrally:
+ * these powers are normal for a regulated issuer, and a holder should still be able to see them.
+ */
+export interface IssuerControls {
+  /** False for a classic SPL Token mint, which can only carry the mint and freeze authorities. */
+  token2022: boolean;
+  canMint: boolean;
+  canFreeze: boolean;
+  /** A permanent delegate can move or burn tokens in ANY holder's account. */
+  canSeize: boolean;
+  canPause: boolean;
+  paused: boolean;
+  /** Whether new token accounts start frozen (an allowlist). Null when the mint has no such setting. */
+  newAccountsFrozen: boolean | null;
+  /** The mint has a transfer-hook slot. A program runs on every transfer only if one is attached. */
+  hookSlot: boolean;
+  hookProgram: string | null;
+  /** Fee charged on every transfer, in basis points, in force this epoch. Null when the mint has none. */
+  transferFeeBps: number | null;
+}
+
 /** What a round trip costs at a given size, quoted through Jupiter both ways. */
 export interface ExitQuote {
   /** "ok" measured, "no-route" cannot be sold at this size, "unavailable" we could not reach Jupiter,
@@ -238,6 +261,8 @@ export interface Variant {
   holders?: number;
   /** Scheduled or applied balance change on the mint; null when the token has no such extension. */
   corporateAction?: CorporateAction | null;
+  /** What the issuer can do to this token on-chain. Null when the mint could not be read. */
+  controls?: IssuerControls | null;
   logoURI?: string;
   score: TrovaScore;
 }
@@ -517,6 +542,10 @@ export interface AssetDetail {
   externalRating: ExternalRating | null;
   /** Real price history for the chart. Null when no source had any. */
   priceHistory: PriceHistory | null;
+  /** The real share's largest move across a market closure of two days or more in the last year
+   *  (Friday's close to the next open) — what a lender cannot liquidate through. Only where the
+   *  token tracks one listed share. */
+  weekendGap?: { maxPct: number; closures: number } | null;
   /** tokens.xyz's description of the company. */
   about: string | null;
   /** Where `about` came from: the issuer (tokens.xyz), Wikipedia (credited + linked), or our own line. */

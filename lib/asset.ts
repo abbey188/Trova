@@ -9,7 +9,7 @@ import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
 import { forScore, latestMeasurements } from "./exit-store";
 import { exitLadder } from "./jupiter";
-import { getScaledUiAmounts } from "./token-extensions";
+import { getMintFacts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
 import { getChangeSignals } from "./signals";
 import { getAsset, getOhlcv, getRiskSummary, getVariants, resolveIssuer, type TxzOhlcv, type TxzRiskSummary } from "./tokens-xyz";
@@ -210,9 +210,10 @@ export async function buildAssetDetail(
   // A split or distribution the issuer scheduled on the mint itself (Token-2022 scaled UI amount).
   // Optional context: if the lookup fails the page still renders, just without it.
   try {
-    const scaled = await getScaledUiAmounts(views.map((v) => v.mint));
+    const facts = await getMintFacts(views.map((v) => v.mint));
     for (const v of views) {
-      const s = scaled.get(v.mint);
+      const s = facts.get(v.mint)?.scaled;
+      v.controls = facts.get(v.mint)?.controls ?? null;
       v.corporateAction = s
         ? { multiplier: s.multiplier, newMultiplier: s.newMultiplier, effectiveAt: s.effectiveAt, pending: s.pending }
         : null;
@@ -279,6 +280,7 @@ export async function buildAssetDetail(
     best: best ? { mint: best.variant.mint, symbol: best.variant.symbol, closeCall, runnerUpMint: runnerUp?.variant.mint ?? null } : null,
     externalRating: externalRating(risk),
     priceHistory: priceHistory(chartDaily, chartIntraday, klinesDaily, klinesHourly, ticker, reference),
+    weekendGap: weekendGapOf(klinesDaily),
     about: about.text,
     aboutSource: about.source,
     aboutUrl: about.url,
@@ -362,6 +364,29 @@ function tokenizedSupply(variants: TxzVariant[]): number | null {
  * Day and 52-week ranges come from the real stock where there is one, else from the token, and
  * `basis` says which.
  */
+/**
+ * The real share's largest move across a closure: the previous session's close to the next open,
+ * wherever two or more days passed between them (weekends and holidays). Measured from Backpack's
+ * daily candles of the listed stock, never from the token.
+ */
+function weekendGapOf(klines: BpKline[] | null): { maxPct: number; closures: number } | null {
+  if (!klines || klines.length < 20) return null;
+  const days = klines
+    // Backpack returns a candle for every calendar day; closed days repeat the last price with no volume.
+    .filter((k) => Number(k.volume) > 0)
+    .map((k) => ({ t: Date.parse(k.start.replace(" ", "T") + "Z"), open: Number(k.open), close: Number(k.close) }))
+    .filter((d) => Number.isFinite(d.t) && d.open > 0 && d.close > 0)
+    .sort((a, b) => a.t - b.t);
+  let maxPct = 0;
+  let closures = 0;
+  for (let i = 1; i < days.length; i++) {
+    if (days[i].t - days[i - 1].t < 2.5 * 86_400_000) continue;
+    closures++;
+    maxPct = Math.max(maxPct, Math.abs(days[i].open / days[i - 1].close - 1) * 100);
+  }
+  return closures >= 10 ? { maxPct, closures } : null;
+}
+
 function priceHistory(
   daily: TxzOhlcv | null | undefined,
   intraday: TxzOhlcv | null | undefined,
