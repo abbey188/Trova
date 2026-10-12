@@ -148,8 +148,8 @@ export default async function DocsPage() {
 
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <H2 id="problem" n={1}>The problem</H2>
-            <P>The same stock exists on Solana as several different tokens, from different issuers. On a price chart they look identical. What you get differs: some redeem for the real share, some pay its cash value, some give economic exposure with no rights at all, and some cannot be sold at any real size.</P>
-            <P>This has hurt holders before. FTX sold stock tokens its site said could be redeemed for the underlying, while its terms said buyers had no claim to it; when FTX collapsed in 2022, holders were stuck. In 2025, OpenAI publicly warned that tokens sold under its name were not OpenAI equity.</P>
+            <P>The same stock exists on Solana as several different tokens, from different issuers. On a price chart they look identical. What you get differs: some redeem for the real share, some pay its cash value, some give economic exposure with no rights at all, and what you get back when you sell depends on the token, the size and the hour.</P>
+            <P>This has hurt holders before. FTX sold stock tokens its site said could be redeemed for the underlying, while its terms were reported to say buyers had no claim to it; when FTX collapsed in 2022, holders were stuck. In 2025, OpenAI publicly warned that tokens sold under its name were not OpenAI equity.</P>
             <P>Market-only scores miss this. tokens.xyz&apos;s own market score gives Tesla, SpaceX and OpenAI tokens the same <b style={{ color: "var(--ink)" }}>A · “Established”</b>, 97 to 100 out of 100 — all four of its inputs are market metrics. Trova shows it beside ours, never blended in, and adds the half it leaves out.</P>
           </section>
 

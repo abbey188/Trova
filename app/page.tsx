@@ -171,7 +171,7 @@ export default async function Landing() {
             <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>Ownership &amp; Exit ratings for tokenized stocks</span>
             <h1 style={{ margin: "18px 0 0", ...D, fontSize: 62, lineHeight: 1.02, fontWeight: 700, letterSpacing: -2 }}>Know what<br />you own</h1>
             <p style={{ margin: "22px 0 0", fontSize: 16, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: "46ch" }}>
-              The same stock exists on Solana as several tokens that look identical on a chart. Some redeem for the real share, some pay its cash value, some give you no rights at all — and some you can&apos;t sell at any size. Trova rates what you&apos;d own and whether you can get out.
+              The same stock exists on Solana as several tokens that look identical on a chart. Some redeem for the real share, some pay its cash value, some give you no rights at all — and what you get back when you sell depends on the token, the size and the hour. Trova rates what you&apos;d own and whether you can get out.
             </p>
             <div style={{ marginTop: 30 }}><Cluster items={d.cluster} more={more} size={56} /></div>
             <div style={{ display: "flex", gap: 12, marginTop: 30 }}>

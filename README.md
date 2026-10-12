@@ -2,7 +2,7 @@
 
 **Trova is a portfolio manager for tokenized stocks on Solana that rates every token on Ownership and Exit, so you hold the right one.**
 
-The same stock exists on Solana as several different tokens. On a price chart they look identical. They are not: some redeem for the real share, some pay its cash value, some give you exposure with no rights at all, and some cannot be sold at any real size. Trova tells you what you would actually own, and whether you can get back out — then lets you buy the soundest token, move out of a weak one, and sell, from your own wallet.
+The same stock exists on Solana as several different tokens. On a price chart they look identical. They are not: some redeem for the real share, some pay its cash value, some give you exposure with no rights at all, and what you get back when you sell depends on the token, the size and the hour. Trova tells you what you would actually own, and whether you can get back out — then lets you buy the soundest token, move out of a weak one, and sell, from your own wallet.
 
 **Live:** [trovascore.vercel.app](https://trovascore.vercel.app) · **Method:** [trovascore.vercel.app/docs](https://trovascore.vercel.app/docs) · Built for **Stocklana** (Solana Foundation)
 
@@ -12,7 +12,7 @@ The same stock exists on Solana as several different tokens. On a price chart th
 
 Tokenized equity has failed its holders before, and the failures were about rights and exits, not prices:
 
-- **FTX (2022).** FTX's site said its stock tokens could be redeemed for the underlying shares; its own terms said buyers had no claim to delivery of the underlying. When FTX collapsed, holders were stuck.
+- **FTX (2022).** FTX's site said its stock tokens could be redeemed for the underlying shares; its own terms, as reported at the time, said buyers had no claim to delivery of the underlying. When FTX collapsed, holders were stuck.
 - **"OpenAI tokens" (2025).** OpenAI publicly stated that tokens sold under its name were *not* OpenAI equity — exposure through a special-purpose vehicle, issued without its approval.
 
 Market-only risk scores miss this. tokens.xyz's own market score rates Tesla, SpaceX and OpenAI tokens alike as *A / "Established"* (97 to 100), because all four of its inputs are market metrics. Trova shows it beside ours — never blended in — and adds the half they leave out: what you own.
