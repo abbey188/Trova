@@ -5,8 +5,8 @@
 // These are observations of a live market, so the assertions are deliberately loose: a market-maker
 // filled token must cost far less than its pools say, and a token that is shut for the night must
 // say so instead of reporting a loss. Nothing is asserted about CLSKx, once our example of a token
-// that could not be left: on 2026-10-12 a $5,000 round trip in it cost 1.0% through a market maker
-// at 03:00 UTC and 99.98% an hour earlier, when none was quoting. Whether a thin token can be left
+// that could not be left: on 2026-10-12 a $500 round trip in it cost 99.98% at about 01:50 UTC, when
+// no market maker would buy it back, and 1.0% at about 02:10 UTC, when one would. Whether a thin token can be left
 // depends on the hour, which is why the measurement is stored by market session.
 
 import { exitCeiling, exitCost, exitLadder, sellNow } from "../lib/jupiter";
