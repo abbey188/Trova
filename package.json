@@ -12,6 +12,7 @@
     "verify": "tsx scripts/verify-scoring.ts && tsx scripts/verify-signals.ts",
     "verify:exit": "tsx --env-file=.env.local scripts/verify-exit.ts",
     "measure": "tsx --env-file=.env.local scripts/measure-exit.ts",
+    "diagnostics": "tsx --env-file=.env.local scripts/score-diagnostics.ts",
     "snapshot": "tsx --env-file=.env.local scripts/snapshot.ts",
     "snapshot:dry": "tsx --env-file=.env.local scripts/snapshot.ts --dry-run",
     "rescore": "tsx --env-file=.env.local scripts/rescore.ts"
