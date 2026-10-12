@@ -108,12 +108,23 @@ export async function runMeasurement(opts: { budgetMs?: number; limit?: number; 
   let rowsWritten = 0;
   for (const t of todo) {
     if (opts.budgetMs != null && Date.now() - started > opts.budgetMs) break;
+    // Stop at the bell (or the open): the tokens left belong to the other session's run, and carrying
+    // on would write over that session's measurements for today.
+    if (usSession() !== session) break;
     const rungs = await measureLadder(t.mint);
     opts.onToken?.(t, rungs);
     // A token Jupiter could not be reached for is left unmeasured, so the next call tries again.
     if (rungs.length === 0) continue;
     // Written token by token: a run that is cut short keeps everything it finished.
-    if (!opts.dryRun) rowsWritten += await writeMeasurements(toRows(t, rungs, date, session));
+    // A failed write (a network drop) costs that token, which the next call measures again.
+    if (!opts.dryRun) {
+      try {
+        rowsWritten += await writeMeasurements(toRows(t, rungs, date, session));
+      } catch (e) {
+        console.error(`could not store ${t.symbol}:`, e instanceof Error ? e.message : e);
+        continue;
+      }
+    }
     measured++;
   }
 
