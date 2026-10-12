@@ -1,10 +1,9 @@
 // Landing — ported from LandingDesktop / LandingMobile on the canvas. Tagline, one line, two buttons
 // (flow map), the stock cluster, and one company's two tokens measured live.
 //
-// The pair is chosen from stored measurements (pickContrastPair), not named here. It used to be
-// TSLAx against TSLAon, on the belief that TSLAon could not be left; that belief came from quoting
-// pools alone, and TSLAon leaves for under half a percent through a market maker. With no measured
-// contrast to show, the page falls back to Tesla's two tokens and says only what was measured.
+// The second card used to claim TSLAon could not be left. That came from quoting pools alone: it
+// leaves for under half a percent through a market maker. Both cards now say only what is measured,
+// live, on the better of Jupiter's two routes.
 
 import { unstable_cache } from "next/cache";
 import Link from "next/link";
@@ -12,7 +11,7 @@ import Link from "next/link";
 import { CompanyLogoStatic } from "@/components/trova/logo-static";
 import { BrowseMarkets, ConnectedRedirect, HowItWorksLink, LandingConnect } from "@/components/trova/landing-bits";
 import { buildAssetDetail } from "@/lib/asset";
-import { pickContrastPair } from "@/lib/exit-store";
+import type { ContrastPair } from "@/lib/exit-store";
 import { count, usd } from "@/lib/format";
 import { getMonitoringStats } from "@/lib/history";
 import { exitCost } from "@/lib/jupiter";
@@ -24,7 +23,12 @@ export const revalidate = 300;
 const CLUSTER: [string, string][] = [["tesla", "Tesla"], ["spacex", "SpaceX"], ["nvidia", "NVIDIA"], ["microsoft", "Microsoft"], ["apple", "Apple"], ["gold", "Gold"]];
 
 const landingData = unstable_cache(async () => {
-  const pair = await pickContrastPair();
+  // Tesla's two tokens, always. Choosing a "contrast" pair from stored measurements was tried on
+  // 2026-10-12 and picked MU against MUx: MUx had no route at $5,000 in market hours, yet cost 0.28%
+  // at $500 that evening, so the card showed grade D beside a cheap exit. What a thin token costs to
+  // leave changes by the hour; one live number cannot stand for it. pickContrastPair stays in
+  // lib/exit-store.ts for a page that can show both sessions.
+  const pair = null as ContrastPair | null;
   const assetId = pair?.assetId ?? "tesla";
   const [tesla, stats] = await Promise.all([
     buildAssetDetail(assetId).catch(() => null),
@@ -44,6 +48,17 @@ const landingData = unstable_cache(async () => {
     tracked: stats?.variantsTracked ?? null,
   };
 }, ["landing-v3"], { revalidate: 300 });
+
+// Company logos, cached apart from the rest so a failed read is never kept: unstable_cache does not
+// store a thrown error, and an empty map is thrown. It MUST go through unstable_cache. This page is
+// prerendered, and tokens.xyz is fetched with `cache: "no-store"`; called directly, that fetch makes
+// Next throw its dynamic-rendering signal, our own catch swallowed it, and the page was built with no
+// logos at all — every company drawn as a lettered disc, on the live site from 25 Sep to 12 Oct.
+const landingLogos = unstable_cache(async () => {
+  const map = await getCompanyLogos();
+  if (map.size === 0) throw new Error("no company logos");
+  return [...map];
+}, ["landing-logos-v1"], { revalidate: 300 });
 
 const D = { fontFamily: "var(--font-display), system-ui" } as const;
 const N = { ...D, fontVariantNumeric: "tabular-nums" } as const;
@@ -123,8 +138,10 @@ const logoMark = (s: number) => (
 );
 
 export default async function Landing() {
-  // Logos stay out of the 5-minute page cache: they have their own, which never keeps a failure.
-  const [cached, logos] = await Promise.all([landingData(), getCompanyLogos().catch(() => new Map<string, string>())]);
+  // Logos first: the asset build inside landingData reads the same in-memory logo map, and should
+  // find it filled.
+  const logos = new Map(await landingLogos().catch(() => [] as [string, string][]));
+  const cached = await landingData();
   const d = {
     ...cached,
     // The fresh company logo first: the cached one may be a fallback captured during an outage.
