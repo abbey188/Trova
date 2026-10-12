@@ -1,5 +1,10 @@
 // Landing — ported from LandingDesktop / LandingMobile on the canvas. Tagline, one line, two buttons
-// (flow map), the stock cluster, and Tesla's two tokens measured live.
+// (flow map), the stock cluster, and one company's two tokens measured live.
+//
+// The pair is chosen from stored measurements (pickContrastPair), not named here. It used to be
+// TSLAx against TSLAon, on the belief that TSLAon could not be left; that belief came from quoting
+// pools alone, and TSLAon leaves for under half a percent through a market maker. With no measured
+// contrast to show, the page falls back to Tesla's two tokens and says only what was measured.
 
 import { unstable_cache } from "next/cache";
 import Link from "next/link";
@@ -7,6 +12,7 @@ import Link from "next/link";
 import { CompanyLogoStatic } from "@/components/trova/logo-static";
 import { BrowseMarkets, ConnectedRedirect, HowItWorksLink, LandingConnect } from "@/components/trova/landing-bits";
 import { buildAssetDetail } from "@/lib/asset";
+import { pickContrastPair } from "@/lib/exit-store";
 import { count, usd } from "@/lib/format";
 import { getMonitoringStats } from "@/lib/history";
 import { exitCost } from "@/lib/jupiter";
@@ -18,22 +24,26 @@ export const revalidate = 300;
 const CLUSTER: [string, string][] = [["tesla", "Tesla"], ["spacex", "SpaceX"], ["nvidia", "NVIDIA"], ["microsoft", "Microsoft"], ["apple", "Apple"], ["gold", "Gold"]];
 
 const landingData = unstable_cache(async () => {
+  const pair = await pickContrastPair();
+  const assetId = pair?.assetId ?? "tesla";
   const [tesla, stats] = await Promise.all([
-    buildAssetDetail("tesla").catch(() => null),
+    buildAssetDetail(assetId).catch(() => null),
     getMonitoringStats(7).catch(() => null),
   ]);
-  const good = tesla?.variants.find((v) => v.symbol === "TSLAx") ?? null;
-  const thin = tesla?.variants.find((v) => v.symbol === "TSLAon") ?? null;
+  const good = (pair ? tesla?.variants.find((v) => v.mint === pair.goodMint) : tesla?.variants.find((v) => v.symbol === "TSLAx")) ?? null;
+  const thin = (pair ? tesla?.variants.find((v) => v.mint === pair.thinMint) : tesla?.variants.find((v) => v.symbol === "TSLAon")) ?? null;
   const [goodTrip, thinTrip] = await Promise.all([
     good ? exitCost(good.mint, 500).catch(() => null) : null,
     thin ? exitCost(thin.mint, 500).catch(() => null) : null,
   ]);
   return {
     good, thin, goodTrip, thinTrip,
+    assetId,
+    name: tesla?.asset.name ?? "Tesla",
     teslaLogo: tesla?.asset.logoUrl ?? null,
     tracked: stats?.variantsTracked ?? null,
   };
-}, ["landing-v2"], { revalidate: 300 });
+}, ["landing-v3"], { revalidate: 300 });
 
 const D = { fontFamily: "var(--font-display), system-ui" } as const;
 const N = { ...D, fontVariantNumeric: "tabular-nums" } as const;
@@ -59,14 +69,14 @@ function Bars({ own, exit, onTint }: { own: number; exit: number; onTint: boolea
 
 // The second card follows the live rating: red when it can't be left (not tradable, grade D, or
 // ≥10% lost on the way back out), amber when it is merely the weaker token.
-function TokenCard({ v, logo, line, bad, warn, compact }: { v: AssetVariantView; logo: string | null; line: React.ReactNode; bad: boolean; warn?: boolean; compact?: boolean }) {
+function TokenCard({ v, logo, line, bad, warn, compact, name, id, mm }: { v: AssetVariantView; logo: string | null; line: React.ReactNode; bad: boolean; warn?: boolean; compact?: boolean; name: string; id: string; mm?: boolean }) {
   const tint = bad ? { bg: "var(--danger-soft)", border: "1px solid var(--danger-line)", sub: "var(--danger-deep)", rule: "var(--danger-line)" }
     : warn ? { bg: "var(--warn-soft)", border: "1px solid var(--grade-c-bg)", sub: "var(--ink-soft)", rule: "var(--grade-c-bg)" }
     : { bg: "var(--surface)", border: "2px solid var(--grade-a)", sub: "var(--ink-faint)", rule: "var(--track)" };
   return (
     <div style={{ background: tint.bg, border: tint.border, borderRadius: 16, padding: compact ? "14px 15px" : "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <CompanyLogoStatic src={logo} name="Tesla" id="tesla" size={40} />
+        <CompanyLogoStatic src={logo} name={name} id={id} size={40} />
         <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ ...D, fontSize: compact ? 15 : 17, fontWeight: 600 }}>{v.symbol}</span>
@@ -74,7 +84,7 @@ function TokenCard({ v, logo, line, bad, warn, compact }: { v: AssetVariantView;
             {warn && compact && <span style={{ borderRadius: 999, padding: "2px 8px", fontSize: 10, fontWeight: 700, color: "var(--grade-c)", background: "var(--surface)" }}>Weaker</span>}
           </div>
           <span style={{ fontSize: 11, color: tint.sub }}>
-            {v.issuer} · {usd(v.liquidityUsd, { compact: true })} liquidity{compact ? "" : ` · ${count(v.holders)} holders`}
+            {v.issuer} · {mm ? "filled by market makers" : `${usd(v.liquidityUsd, { compact: true })} liquidity`}{compact ? "" : ` · ${count(v.holders)} holders`}
           </span>
         </div>
         <span style={{ flexGrow: 1 }} />
@@ -118,19 +128,22 @@ export default async function Landing() {
   const d = {
     ...cached,
     // The fresh company logo first: the cached one may be a fallback captured during an outage.
-    teslaLogo: logos.get("tesla") ?? cached.teslaLogo ?? null,
+    teslaLogo: logos.get(cached.assetId) ?? cached.teslaLogo ?? null,
     cluster: CLUSTER.map(([id, name]) => ({ id, name, logo: logos.get(id) ?? null })),
   };
   const back = (t: typeof d.goodTrip) => (t && t.status === "ok" && t.roundTripPct != null ? 500 * (1 - t.roundTripPct / 100) : null);
   const goodPct = d.goodTrip?.status === "ok" ? d.goodTrip.roundTripPct : null;
   const thinBack = back(d.thinTrip);
+  // Pool depth says nothing about a token a market maker fills, so those cards do not quote it.
+  const goodMm = d.goodTrip?.liquidity === "market-maker";
+  const thinMm = d.thinTrip?.liquidity === "market-maker";
   const more = d.tracked != null ? d.tracked - d.cluster.length : null;
 
   const goodLine = goodPct != null
     ? <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>Costs <b style={{ color: "var(--grade-a)" }}>{goodPct.toFixed(2)}%</b> to get in and back out at $500</span>
     : <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{d.good?.explanation?.headline}</span>;
   const thinPct = d.thinTrip?.status === "ok" ? d.thinTrip.roundTripPct : null;
-  const thinBad = !!d.thin && (!d.thin.score.routable || d.thin.score.grade === "D" || (thinPct ?? 0) >= 10);
+  const thinBad = !!d.thin && (d.thinTrip?.status === "no-route" || (thinPct ?? 0) >= 10 || (thinPct == null && d.thinTrip?.status !== "market-closed" && !d.thin.score.routable));
   const thinTone = thinBad ? "var(--danger)" : "var(--grade-c)";
   const thinLine = thinBad && thinBack != null
     ? <span style={{ fontSize: 12, fontWeight: 700, color: thinTone }}>Buy $500 and sell it straight back: {usd(thinBack)} returns. Same company, same chart.</span>
@@ -172,9 +185,9 @@ export default async function Landing() {
 
           {d.good && d.thin && (
             <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 12 }}>
-              <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>Tesla, right now</span>
-              <TokenCard v={d.good} logo={d.teslaLogo} line={goodLine} bad={false} />
-              <TokenCard v={d.thin} logo={d.teslaLogo} line={thinLine} bad={thinBad} warn={!thinBad} />
+              <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>{d.name}, right now</span>
+              <TokenCard v={d.good} logo={d.teslaLogo} line={goodLine} bad={false} name={d.name} id={d.assetId} mm={goodMm} />
+              <TokenCard v={d.thin} logo={d.teslaLogo} line={thinLine} bad={thinBad} warn={!thinBad} name={d.name} id={d.assetId} mm={thinMm} />
             </div>
           )}
         </div>
@@ -191,8 +204,8 @@ export default async function Landing() {
         <p style={{ margin: "13px 0 0", fontSize: 15, lineHeight: 1.55, color: "var(--ink-soft)" }}>The same stock exists on Solana as several tokens with very different rights. Trova rates what you&apos;d own, and whether you can get out.</p>
         {d.good && d.thin && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 20 }}>
-            <TokenCard compact v={d.good} logo={d.teslaLogo} bad={false} line={<span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{usd(d.good.liquidityUsd, { compact: true })} depth{goodPct != null ? ` · ${goodPct.toFixed(2)}% to leave` : ""}</span>} />
-            <TokenCard compact v={d.thin} logo={d.teslaLogo} bad={thinBad} warn={!thinBad} line={<span style={{ fontSize: 11, color: thinBad ? "var(--danger-deep)" : "var(--ink-soft)", fontWeight: 600 }}>{usd(d.thin.liquidityUsd, { compact: true })} depth{thinBack != null ? ` · $500 in, ${usd(thinBack)} out` : ""}</span>} />
+            <TokenCard compact name={d.name} id={d.assetId} v={d.good} logo={d.teslaLogo} bad={false} line={<span style={{ fontSize: 11, color: "var(--ink-soft)" }}>{goodMm ? "Market-maker filled" : `${usd(d.good.liquidityUsd, { compact: true })} depth`}{goodPct != null ? ` · ${goodPct.toFixed(2)}% to leave` : ""}</span>} />
+            <TokenCard compact name={d.name} id={d.assetId} v={d.thin} logo={d.teslaLogo} bad={thinBad} warn={!thinBad} line={<span style={{ fontSize: 11, color: thinBad ? "var(--danger-deep)" : "var(--ink-soft)", fontWeight: 600 }}>{thinMm ? "Market-maker filled" : `${usd(d.thin.liquidityUsd, { compact: true })} depth`}{thinBack != null ? ` · $500 in, ${usd(thinBack)} out` : ""}</span>} />
             <span style={{ fontSize: 11, color: "var(--ink-faint)", padding: "3px 4px 0" }}>Same company. Same price on the chart.</span>
           </div>
         )}

@@ -127,6 +127,44 @@ export async function measuredMints(date: string, session: "open" | "closed"): P
   return new Set(rows.map((r) => r.mint));
 }
 
+export interface ContrastPair { assetId: string; goodMint: string; thinMint: string }
+
+/**
+ * One company with two tokens the measurements tell apart: one that left $5,000 for under 1%, and
+ * one that — in market hours, so the hour is not the reason — lost half of it or found no route.
+ * The landing page shows such a pair; it is chosen from data so the example can never go stale the
+ * way a hard-coded one did. The most widely held sound token wins. Null when nothing qualifies.
+ */
+export async function pickContrastPair(): Promise<ContrastPair | null> {
+  try {
+    const [latest] = await selectRows<{ snapshot_date: string }>("variant_snapshots", "select=snapshot_date&order=snapshot_date.desc&limit=1");
+    if (!latest) return null;
+    const [variants, measured] = await Promise.all([
+      selectRows<{ mint: string; asset_id: string; holders: number | null; advisory_status: string | null }>(
+        "variant_snapshots", `select=mint,asset_id,holders,advisory_status&snapshot_date=eq.${latest.snapshot_date}&order=id`),
+      latestMeasurements(),
+    ]);
+    const byAsset = new Map<string, typeof variants>();
+    for (const v of variants) (byAsset.get(v.asset_id) ?? byAsset.set(v.asset_id, []).get(v.asset_id)!).push(v);
+
+    let best: (ContrastPair & { holders: number }) | null = null;
+    for (const [assetId, list] of byAsset) {
+      const rule = (mint: string) => measured.get(mint)?.scored?.rungs.find((r) => r.usdSize === 5_000);
+      const good = list
+        .filter((v) => !v.advisory_status && rule(v.mint)?.status === "ok" && (rule(v.mint)!.roundTripPct ?? 100) < 1)
+        .sort((a, b) => (b.holders ?? 0) - (a.holders ?? 0))[0];
+      const thin = list.find((v) => {
+        const r = rule(v.mint);
+        return v.mint !== good?.mint && !v.advisory_status && r != null && (r.status === "no-route" || (r.status === "ok" && (r.roundTripPct ?? 0) >= 50));
+      });
+      if (good && thin && (good.holders ?? 0) > (best?.holders ?? -1)) best = { assetId, goodMint: good.mint, thinMint: thin.mint, holders: good.holders ?? 0 };
+    }
+    return best ? { assetId: best.assetId, goodMint: best.goodMint, thinMint: best.thinMint } : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function writeMeasurements(rows: ExitMeasurementRow[]): Promise<number> {
   return rows.length ? upsertRows("exit_measurements", rows, "mint,snapshot_date,session,size_usd") : 0;
 }
