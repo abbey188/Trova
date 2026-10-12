@@ -6,6 +6,7 @@ import { pool } from "./async";
 import { getBackpackIssuedMints, getSecurities } from "./backpack";
 import { forScore, latestMeasurements, measurementsOn } from "./exit-store";
 import { insertRow, selectRows, upsertRows } from "./supabase-rest";
+import { getMintFacts } from "./token-extensions";
 import { getVariants, resolveIssuer } from "./tokens-xyz";
 import { METHOD_VERSION, scoreVariant, type ScoreContext } from "./trust-score";
 import type { TrovaScore, TxzVariant } from "./types";
@@ -41,6 +42,8 @@ export interface SnapshotRow {
   execution_score: number | null;
   bot_volume_ratio: number | null;
   flags: string[];
+  /** The issuer's on-chain controls as read from the mint that day (lib/token-extensions.ts). */
+  controls?: unknown;
   raw: unknown;
 }
 
@@ -118,6 +121,12 @@ export async function collectSnapshots(opts: { date?: string; concurrency?: numb
     }
   });
 
+  // What each issuer can do to its token on-chain, read from the mints in a handful of calls. Stored so
+  // a change — a pause switched on, a fee raised, a hook program attached — shows up as a difference
+  // between two days. Optional: a failed read leaves the column empty for those tokens.
+  const facts = await getMintFacts([...rows.keys()]).catch(() => null);
+  if (facts) for (const row of rows.values()) row.controls = facts.get(row.mint)?.controls ?? null;
+
   return { date, assets: assets.size, rows: [...rows.values()], errors };
 }
 
@@ -148,7 +157,15 @@ export async function runSnapshot(opts: { dryRun?: boolean } = {}): Promise<Snap
 
   let written = 0;
   if (!opts.dryRun) {
-    written = await upsertRows("variant_snapshots", rows, "mint,snapshot_date");
+    try {
+      written = await upsertRows("variant_snapshots", rows, "mint,snapshot_date");
+    } catch (e) {
+      // The `controls` column arrives with migration 20261012000000. Until it is applied the snapshot
+      // must still be written — a day without ratings is worse than a day without controls.
+      if (!/controls/.test(message(e))) throw e;
+      errors.push({ scope: "snapshot:controls", error: "controls column missing — apply migration 20261012000000" });
+      written = await upsertRows("variant_snapshots", rows.map(({ controls: _dropped, ...rest }) => rest), "mint,snapshot_date");
+    }
     await insertRow("snapshot_runs", {
       started_at: startedAt.toISOString(),
       snapshot_date: date,
