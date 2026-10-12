@@ -7,6 +7,7 @@ import { aboutFor } from "./about";
 import { logoFor } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
+import { forScore, latestMeasurements } from "./exit-store";
 import { exitLadder } from "./jupiter";
 import { getScaledUiAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -147,11 +148,13 @@ export async function buildAssetDetail(
       : null;
 
   const historyDays = change?.historyDays ?? 0;
+  const measured = await latestMeasurements(variants.map((v) => v.mint));
   const ctxFor = (v: TxzVariant): ScoreContext => ({
     assetId,
     canonicalSource: asset?.canonicalMarket?.source,
     issuerConfirmed: backpackMints?.has(v.mint),
     historyDays,
+    measuredExit: forScore(measured.get(v.mint)),
   });
 
   const ranked = rankVariants(variants, ctxFor);

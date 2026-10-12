@@ -10,6 +10,7 @@ import { explain } from "./explain";
 import { getCompanyLogos, tickerLogo } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
+import { forScore, latestMeasurements } from "./exit-store";
 import { sellNow } from "./jupiter";
 import { withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -66,10 +67,13 @@ export function valuePrice(
   market: { price?: number; liquidity?: number; lastTradeAt?: number; trade24h?: number },
   reference: ReferencePrice | null,
   now = Date.now(),
+  /** A measured exit says this token trades. Its pools may still be empty and its last on-chain
+   *  trade old — a market-maker-filled token looks dead by both tests and is not. */
+  measuredTradable = false,
 ): Valuation {
   const price = market.price ?? 0;
   const traded = (market.lastTradeAt != null && now - market.lastTradeAt <= PRICE_FRESH_MS) || (market.trade24h ?? 0) > 0;
-  const fresh = price > 0 && (market.liquidity ?? 0) > 0 && traded;
+  const fresh = price > 0 && (measuredTradable || ((market.liquidity ?? 0) > 0 && traded));
   const divergent = reference != null && price > 0 && Math.abs(price / reference.priceUsd - 1) > REFERENCE_DIVERGENCE;
   if (fresh && !divergent) return { priceUsd: price, source: "market", stale: false };
   if (reference != null && reference.priceUsd > 0) return { priceUsd: reference.priceUsd, source: reference.source, stale: true };
@@ -309,6 +313,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     }),
   ]);
   const historyDays = change?.historyDays ?? 0;
+  const measured = await latestMeasurements([...variantsByAsset.values()].flat().map((v) => v.mint));
 
   const logos = await logosPromise;
   const holdings: Holding[] = [];
@@ -321,6 +326,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       canonicalSource: h.entry.asset.canonicalMarket?.source,
       issuerConfirmed: backpackMints?.has(v.mint),
       historyDays,
+      measuredExit: forScore(measured.get(v.mint)),
     });
     const ranked = rankVariants(variants, ctxFor);
     const mine = ranked.find((r) => r.variant.mint === h.mint);
@@ -339,7 +345,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
     const reference: ReferencePrice | null = pythPrice
       ? { priceUsd: pythPrice.priceUsd, source: "pyth" }
       : Number.isFinite(backpackPrice) ? { priceUsd: backpackPrice, source: "backpack" } : null;
-    const valuation = valuePrice(mine.variant.market, reference);
+    const valuation = valuePrice(mine.variant.market, reference, Date.now(), mine.score.exit.components.measured === true && mine.score.routable);
 
     const { best, closeCall } = pickBest(ranked);
     const better =

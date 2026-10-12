@@ -1,4 +1,4 @@
-// The Trova Score v3.1 — classify the instrument, then two pillars users can read
+// The Trova Score v4.0 — classify the instrument, then two pillars users can read
 // separately, plus a combined score.
 //
 //   Instrument     What the token legally is (direct share claim … pre-IPO SPV exposure).
@@ -16,18 +16,27 @@
 // same thing (liquidity/volume/trades/holders correlate 0.7–0.96), non-compensatory aggregation,
 // fixed calibration, sensitivity-checked. Calibrated on live tokens.xyz variants, 2026-09-15.
 //
+// v4.0 (2026-10-12): Exit reads a MEASURED exit when one is stored. Until then depth meant pool
+// depth, which is blind to tokens that market makers fill — 359 of 378 Ondo tokens graded D on
+// pools holding a median of $48, while a $50,000 round trip in several of them cost under 0.5%.
+// Depth is now the largest size measured to round-trip for under 1%, and "tradable" is a measured
+// $5,000 round trip under 5%. With no measurement the v3 pool rule still applies.
+//
 // Rules: tier is a neutral label, never scored. Price, price gaps and private-valuation
 // premiums are display-only, never scored. Speculative instruments are always labelled.
 // Scores update as more information becomes public. Pure functions, server-side.
 
 import type {
   Confidence, Grade, InstrumentClass, InstrumentInfo, ExitComponents, PillarScore, Rating,
-  ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
+  MeasuredExit, ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
-export const METHOD_VERSION = "v3.2-2026-09-15";
+export const METHOD_VERSION = "v4.0-2026-10-12";
 
-export const MIN_LIQUIDITY_USD = 50_000;   // below this a trade would move the price too much to route
+export const RULE_SIZE_USD = 5_000;        // the round trip the "tradable" rule is measured at
+export const MAX_TRADABLE_COST_PCT = 5;    // a measured $5,000 round trip must cost less than this
+export const CAPACITY_COST_PCT = 1;        // "capacity" = the largest size measured under this cost
+export const MIN_LIQUIDITY_USD = 50_000;   // unmeasured tokens only: below this pool depth a trade moves the price
 export const CLOSE_CALL_MARGIN = 5;        // best vs runner-up within this → show both, no winner
 export const HIGH_BOT_SHARE = 0.8;         // factual flag only, not scored
 export const SHORT_HISTORY_DAYS = 7;       // fewer days of snapshots → "short history" label
@@ -45,6 +54,10 @@ const ANCHORS = {
   holders: [[10, 0], [70, 10], [400, 25], [2_000, 50], [9_000, 75], [25_000, 90], [100_000, 100]],
   trades24h: [[1, 0], [5, 10], [40, 25], [2_500, 50], [12_500, 75], [32_000, 90], [150_000, 100]],
   volume24hUsd: [[100, 0], [200, 10], [5_000, 25], [150_000, 50], [1_200_000, 75], [2_500_000, 90], [25_000_000, 100]],
+  // Measured capacity: the largest size that round-trips for under 1%. The measurement ladder has
+  // five sizes, so capacity is one of them (or nothing) and each sits on an anchor — a token that
+  // leaves $5,000 under 1% is the middle of the tradable field, one that leaves $1M is the top.
+  exitCapacityUsd: [[100, 0], [500, 25], [5_000, 50], [50_000, 75], [250_000, 90], [1_000_000, 100]],
 } as const satisfies Record<string, Anchors>;
 
 // Provider-documented redemption path (tokens.xyz stockVariantTier). Unreported is the
@@ -175,6 +188,44 @@ export interface ScoreContext {
   canonicalSource?: string;
   /** Days of Trova snapshots behind this variant. */
   historyDays?: number;
+  /** The stored exit measurement to score from (lib/exit-store.ts). Absent → pool depth is used. */
+  measuredExit?: MeasuredExit | null;
+}
+
+export interface MeasuredFacts {
+  /** A $5,000 round trip was quoted and cost under MAX_TRADABLE_COST_PCT. */
+  tradable: boolean;
+  /** Cost of the $5,000 round trip in %, or null when there was no route. */
+  costPct: number | null;
+  /** Largest measured size under CAPACITY_COST_PCT, 0 when none. */
+  capacityUsd: number;
+  filledBy: "pools" | "market-maker" | null;
+}
+
+/**
+ * What a stored measurement says, or null when it cannot be scored from. It needs the $5,000 rung,
+ * and that rung must be an answer about the token: a quote or a clear "no route". "Market closed" is
+ * a fact about the hour, so it never scores — and a measurement taken while the market was shut only
+ * counts when it actually quoted, since a token that trades at 3am certainly trades.
+ */
+export function measuredFacts(m?: MeasuredExit | null): MeasuredFacts | null {
+  if (!m) return null;
+  const rule = m.rungs.find((r) => r.usdSize === RULE_SIZE_USD);
+  if (!rule || (rule.status !== "ok" && rule.status !== "no-route")) return null;
+  if (m.session === "closed" && rule.status !== "ok") return null;
+
+  const costPct = rule.status === "ok" ? rule.roundTripPct : null;
+  let capacityUsd = 0;
+  for (const r of [...m.rungs].sort((a, b) => a.usdSize - b.usdSize)) {
+    if (r.status === "ok" && r.roundTripPct != null && r.roundTripPct < CAPACITY_COST_PCT) capacityUsd = r.usdSize;
+    else if (r.status === "ok" || r.status === "no-route") break;
+  }
+  return {
+    tradable: costPct != null && costPct < MAX_TRADABLE_COST_PCT,
+    costPct,
+    capacityUsd,
+    filledBy: rule.liquidity ?? null,
+  };
 }
 
 // PreStocks / Tessera are SPV-exposure issuers. Tessera's convention is name "T-<Company>" AND
@@ -217,15 +268,22 @@ function ownershipPillar(v: TxzVariant, instrument: InstrumentInfo): PillarScore
   return { score, grade: gradeOf(score), components };
 }
 
-function exitPillar(v: TxzVariant): PillarScore<ExitComponents> {
+function exitPillar(v: TxzVariant, measured: MeasuredFacts | null): PillarScore<ExitComponents> {
   const m = v.market;
   const exec = v.executionQuality?.executionScore;
   const components: ExitComponents = {
-    liquidity: round(anchored(m.liquidity, ANCHORS.liquidityUsd)),
+    // Depth: what was measured to leave under 1% when a measurement exists, else the pools' depth.
+    liquidity: measured
+      ? round(anchored(measured.capacityUsd, ANCHORS.exitCapacityUsd))
+      : round(anchored(m.liquidity, ANCHORS.liquidityUsd)),
     // trades and volume correlate 0.96 → one indicator, not two
     activity: round((anchored(m.trade24h, ANCHORS.trades24h) + anchored(m.volume24hUSD, ANCHORS.volume24hUsd)) / 2),
     holders: round(anchored(m.holder, ANCHORS.holders)),
     execution: exec == null ? null : round(clamp(exec)),
+    measured: measured != null,
+    capacityUsd: measured?.capacityUsd ?? null,
+    roundTripPct: measured?.costPct ?? null,
+    filledBy: measured?.filledBy ?? null,
   };
   const parts = [components.liquidity, components.activity, components.holders];
   if (components.execution != null) parts.push(components.execution);
@@ -252,7 +310,8 @@ export function reportedInputs(v: TxzVariant, ctx: ScoreContext = {}): { key: st
 export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore {
   const instrument = classifyInstrument(v, ctx);
   const ownership = ownershipPillar(v, instrument);
-  const exit = exitPillar(v);
+  const measured = measuredFacts(ctx.measuredExit);
+  const exit = exitPillar(v, measured);
   const advisory = v.advisory ?? null;
   const status = advisory?.status;
 
@@ -287,7 +346,7 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
   if (v.stockVariantTier === "not_redeemable") flags.push("not-redeemable");
   if (!ownership.components.redemptionReported) flags.push("redemption-unreported");
   if (v.kind === "leveraged") flags.push("leveraged");
-  if (liquidityUsd < MIN_LIQUIDITY_USD) flags.push("thin-liquidity");
+  if (measured ? !measured.tradable : liquidityUsd < MIN_LIQUIDITY_USD) flags.push("thin-liquidity");
   if (!traded24h) flags.push("no-recent-trades");
   if ((v.executionQuality?.botVolumeRatio ?? 0) >= HIGH_BOT_SHARE) flags.push("high-bot-share");
   if (!issuerNamed) flags.push("issuer-unnamed");
@@ -299,6 +358,10 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
     status === "blocked" ? "Blocked by a tokens.xyz advisory"
     : status === "compromised" ? `Advisory: ${advisory?.reason ?? "marked compromised"}`
     : !rated ? notRatedReason
+    : measured ? (
+        measured.tradable ? undefined
+        : measured.costPct == null ? "No route for a $5,000 round trip"
+        : `A $5,000 round trip costs ${measured.costPct.toFixed(1)}% — over the ${MAX_TRADABLE_COST_PCT}% Trova allows`)
     : liquidityUsd < MIN_LIQUIDITY_USD ? "Liquidity under $50k — a trade would move the price"
     : !traded24h ? "No trades in the last 24 hours"
     : undefined;

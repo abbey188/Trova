@@ -315,8 +315,25 @@ export interface ExitCost {
  * because selling it returns seven cents. Measured 2026-10-11 — TSLAon 0.42% at $500 through a
  * market maker, against 12.8% through its pools.
  */
-export async function exitCost(mint: string, usdSize: number, slippageBps = 100): Promise<ExitCost> {
+export async function exitCost(mint: string, usdSize: number, slippageBps = 100, { quick = false }: { quick?: boolean } = {}): Promise<ExitCost> {
   const size = Math.max(1, Math.round(usdSize));
+  // Quick mode, for the daily job where quotes are the budget: the order route already searches
+  // pools as well as market makers, so when it returns a cheap round trip there is nothing for the
+  // pool route to add. Anything else — no quote, or a cost of 1% or more — is measured in full,
+  // because that is exactly where the two routes have been seen to disagree.
+  if (quick && mint !== USDC_MINT) {
+    const buy = await orderQuote(USDC_MINT, mint, size * 10 ** USDC_DECIMALS);
+    const sell = buy.ok ? await orderQuote(mint, USDC_MINT, buy.quote.outAmount) : null;
+    if (buy.ok && sell?.ok) {
+      const cost = ((size - Number(sell.quote.outAmount) / 10 ** USDC_DECIMALS) / size) * 100;
+      if (cost < 1) {
+        return {
+          status: "ok", roundTripPct: cost, routable: true, usdSize: size, liquidity: sell.quote.liquidity, poolsRoundTripPct: null,
+          routeLabels: [...new Set([...buy.quote.routeLabels, ...sell.quote.routeLabels])],
+        };
+      }
+    }
+  }
   const empty: ExitCost = { status: "unavailable", roundTripPct: null, routable: false, routeLabels: [], usdSize: size, liquidity: null, poolsRoundTripPct: null };
   if (mint === USDC_MINT) return { ...empty, status: "ok", roundTripPct: 0, routable: true };
   const pct = (rawBack: string) => ((size - Number(rawBack) / 10 ** USDC_DECIMALS) / size) * 100;

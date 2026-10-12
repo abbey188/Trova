@@ -142,6 +142,21 @@ export interface ExitComponents {
   activity: number;             // trades + volume (24h)
   holders: number;
   execution: number | null;     // tokens.xyz executionScore when reported
+  /** True when `liquidity` was scored from a measured exit rather than from pool depth. */
+  measured?: boolean;
+  /** Largest measured size that round-trips for under 1%, in USD (0 when none did). */
+  capacityUsd?: number | null;
+  /** Measured cost of a $5,000 round trip, in %; null when there was no route. */
+  roundTripPct?: number | null;
+  /** What filled the measured exit. */
+  filledBy?: "pools" | "market-maker" | null;
+}
+
+/** One stored measurement of a token's exit: a ladder of round trips quoted at one time. */
+export interface MeasuredExit {
+  takenAt: string;               // ISO timestamp of the latest rung
+  session: "open" | "closed";    // whether the US market was open when it was quoted
+  rungs: ExitQuote[];            // ascending by size; sizes never quoted are absent
 }
 
 export interface PillarScore<C> {

@@ -282,4 +282,69 @@ check("a collapse that leaves dollars behind is not rounded to 100%", () => {
   assert.match(e.movement!, /Stopped being tradable/);
 });
 
+// ---- v4.0: Exit read from a measured round trip ------------------------------------------------
+
+const EMPTY_POOLS: Partial<TxzMarket> = { liquidity: 39, trade24h: 0, volume24hUSD: 0, holder: 837 };
+const rung = (usdSize: number, roundTripPct: number | null, status: "ok" | "no-route" | "market-closed" = "ok") =>
+  ({ usdSize, roundTripPct, status, routable: status === "ok", routeLabels: [], liquidity: "market-maker" as const });
+const measured = (session: "open" | "closed", ...rungs: ReturnType<typeof rung>[]) => ({ takenAt: "2026-10-12T15:00:00Z", session, rungs });
+
+check("a market-maker-filled token with empty pools is tradable when its measured exit says so", () => {
+  const v = variant({ market: EMPTY_POOLS });
+  const pools = scoreVariant(v);
+  assert.equal(pools.routable, false);
+  assert.equal(pools.exit.components.liquidity, 0);
+
+  const s = scoreVariant(v, { measuredExit: measured("open", rung(5_000, 0.4), rung(50_000, 0.41), rung(250_000, 0.44), rung(1_000_000, 0.44)) });
+  assert.equal(s.routable, true);
+  assert.equal(s.exit.components.measured, true);
+  assert.equal(s.exit.components.capacityUsd, 1_000_000);
+  assert.equal(s.exit.components.liquidity, 100);
+  assert.ok(!s.flags.includes("thin-liquidity"));
+  assert.ok(s.exit.score > pools.exit.score);
+});
+
+check("capacity is the largest size measured under 1%, and stops at the first size over it", () => {
+  const s = scoreVariant(variant({}), { measuredExit: measured("open", rung(5_000, 0.45), rung(50_000, 1.14), rung(250_000, 0.2)) });
+  assert.equal(s.exit.components.capacityUsd, 5_000);
+  assert.equal(s.exit.components.liquidity, 50);
+});
+
+check("a measured $5,000 round trip of 5% or more is not tradable, however deep the pools look", () => {
+  const s = scoreVariant(variant({ market: DEEP }), { measuredExit: measured("open", rung(5_000, 71.9), rung(500, 12)) });
+  assert.equal(s.routable, false);
+  assert.match(s.notRoutableReason!, /costs 71\.9%/);
+  assert.equal(s.exit.components.liquidity, 0);
+});
+
+check("no route at $5,000 in market hours is a finding; market-closed never is", () => {
+  const none = scoreVariant(variant({ market: DEEP }), { measuredExit: measured("open", rung(5_000, null, "no-route")) });
+  assert.equal(none.routable, false);
+  assert.match(none.notRoutableReason!, /No route/);
+
+  // Shut for the night: the measurement says nothing about the token, so pool depth decides.
+  const shut = scoreVariant(variant({ market: DEEP }), { measuredExit: measured("closed", rung(5_000, null, "market-closed")) });
+  assert.equal(shut.exit.components.measured, false);
+  assert.equal(shut.routable, true);
+
+  // Out of hours, "no route" may only mean the market makers have gone home.
+  const night = scoreVariant(variant({ market: DEEP }), { measuredExit: measured("closed", rung(5_000, null, "no-route")) });
+  assert.equal(night.exit.components.measured, false);
+});
+
+check("a quote taken while the market is shut still counts: a token that trades at night trades", () => {
+  const s = scoreVariant(variant({ market: EMPTY_POOLS }), { measuredExit: measured("closed", rung(5_000, 0.4)) });
+  assert.equal(s.routable, true);
+});
+
+check("a measured token is explained by what was measured, not by its pool depth", () => {
+  const v = variant({ market: EMPTY_POOLS });
+  const ctx = { measuredExit: measured("open", rung(5_000, 0.4), rung(50_000, 0.41)) };
+  const s = scoreVariant(v, ctx);
+  const e = explain(v, s, ctx, {});
+  const liq = e.drivers.find((d) => d.key === "liquidity")!;
+  assert.match(liq.fact, /round trip costs 0\.40%, filled by a market maker's quote/);
+  assert.doesNotMatch(e.headline, /\$39/);
+});
+
 console.log(`${process.exitCode ? "FAILED" : "✓"} ${passed} checks passed`);

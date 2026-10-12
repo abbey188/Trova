@@ -16,7 +16,7 @@
 // never a forecast that it will.
 
 import { count, usd } from "./format";
-import { GRADE_CUTOFFS, MIN_LIQUIDITY_USD, redemptionNote, reportedInputs, scoreVariant, type ScoreContext } from "./trust-score";
+import { GRADE_CUTOFFS, MIN_LIQUIDITY_USD, RULE_SIZE_USD, redemptionNote, reportedInputs, scoreVariant, type ScoreContext } from "./trust-score";
 import type { CorporateAction, Rating, TrendSummary, TrovaScore, TxzVariant } from "./types";
 
 export type DriverKey = "redemption" | "product" | "liquidity" | "activity" | "holders" | "execution" | "advisory";
@@ -114,7 +114,26 @@ function signedCount(n: number): string {
   return `${n >= 0 ? "up" : "down"} ${count(Math.abs(n))}`;
 }
 
+/** Depth in a few words, for a sentence: what was measured, or — unmeasured — what the pools hold. */
+function depthPhrase(v: TxzVariant, s: TrovaScore): string {
+  const x = s.exit.components;
+  if (!x.measured) return `${money(v.market.liquidity)} of depth`;
+  if ((x.capacityUsd ?? 0) > 0) return `exits of ${money(x.capacityUsd!)} measured under 1%`;
+  return x.roundTripPct == null
+    ? `no route for a ${money(RULE_SIZE_USD)} round trip`
+    : `a ${money(RULE_SIZE_USD)} round trip costing ${x.roundTripPct.toFixed(1)}%`;
+}
+
 function liquidityFact(v: TxzVariant, s: TrovaScore, trend?: TrendSummary | null): string {
+  const x = s.exit.components;
+  if (x.measured) {
+    const by = x.filledBy === "market-maker" ? "a market maker's quote" : "on-chain pools";
+    const cost = x.roundTripPct == null
+      ? `No route for a ${money(RULE_SIZE_USD)} round trip`
+      : `A ${money(RULE_SIZE_USD)} round trip costs ${x.roundTripPct.toFixed(2)}%, filled by ${by}`;
+    const capacity = (x.capacityUsd ?? 0) > 0 ? `measured under 1% up to ${money(x.capacityUsd!)}` : "no size measured under 1%";
+    return `${cost}; ${capacity} — ${band(x.liquidity)}.`;
+  }
   const liq = v.market.liquidity ?? 0;
   let fact = `${money(liq)} of on-chain depth — ${band(s.exit.components.liquidity)}`;
   if (trend?.liquidityChangePct != null && Math.abs(trend.liquidityChangePct) >= 1) {
@@ -302,36 +321,36 @@ function headline(v: TxzVariant, s: TrovaScore, holdingBack: Driver | null): str
     return reason.endsWith(".") ? reason : `${reason}.`;
   }
 
-  const liq = money(v.market.liquidity);
+  const depth = depthPhrase(v, s);
   const traded = (v.market.trade24h ?? 0) > 0;
 
   if (s.instrument.class === "pre-ipo-exposure") {
     return s.routable
-      ? `You'd hold exposure through an SPV, not a share — though the market for it is ${s.exit.score >= 65 ? "deep" : "open"}, with ${liq} of depth.`
-      : `You'd hold exposure through an SPV, not a share, and the market for it is thin: ${liq} of depth.`;
+      ? `You'd hold exposure through an SPV, not a share — though the market for it is ${s.exit.score >= 65 ? "deep" : "open"}, with ${depth}.`
+      : `You'd hold exposure through an SPV, not a share, and the market for it is thin: ${depth}.`;
   }
   if (!s.routable) {
-    const market = `${liq} of depth${traded ? "" : " and no trades in 24 hours"}`;
+    const market = `${depth}${traded || s.exit.components.measured ? "" : " and no trades in 24 hours"}`;
     return s.ownership.score >= GRADE_CUTOFFS.B
       ? `The paperwork is sound; the market is not — ${market}.`
       : `Weak on both halves: ${redemptionShort(v)}, and ${market}.`;
   }
   if (s.ownership.score >= GRADE_CUTOFFS.A && s.exit.score >= GRADE_CUTOFFS.A) {
-    return `Strong on both halves: ${redemptionLabel(v)}, with ${liq} of depth.`;
+    return `Strong on both halves: ${redemptionLabel(v)}, with ${depth}.`;
   }
   if (holdingBack?.pillar === "ownership") {
     return `Easy to trade; held back by what you'd own — ${redemptionShort(v)}.`;
   }
   if (holdingBack?.pillar === "exit") {
     const fact =
-      holdingBack.key === "liquidity" ? `${liq} of depth`
+      holdingBack.key === "liquidity" ? depth
       : holdingBack.key === "activity" ? (traded ? `${money(v.market.volume24hUSD)} traded today` : "no trades today")
       : holdingBack.key === "holders" ? `${count(v.market.holder ?? 0)} holders`
       : "fill quality";
     return `Sound structure; held back by the market — ${fact}.`;
   }
   const label = redemptionLabel(v);
-  return `${label[0].toUpperCase()}${label.slice(1)}, with ${liq} of depth.`;
+  return `${label[0].toUpperCase()}${label.slice(1)}, with ${depth}.`;
 }
 
 function movement(trend?: TrendSummary | null): string | null {

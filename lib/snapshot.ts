@@ -4,6 +4,7 @@
 
 import { pool } from "./async";
 import { getBackpackIssuedMints, getSecurities } from "./backpack";
+import { forScore, latestMeasurements, measurementsOn } from "./exit-store";
 import { insertRow, selectRows, upsertRows } from "./supabase-rest";
 import { getVariants, resolveIssuer } from "./tokens-xyz";
 import { METHOD_VERSION, scoreVariant, type ScoreContext } from "./trust-score";
@@ -92,10 +93,11 @@ export async function collectSnapshots(opts: { date?: string; concurrency?: numb
   const date = opts.date ?? new Date().toISOString().slice(0, 10);
   const errors: SnapshotResult["errors"] = [];
 
-  const [securities, backpackMints, assets] = await Promise.all([
+  const [securities, backpackMints, assets, measured] = await Promise.all([
     getSecurities().catch((e) => { errors.push({ scope: "backpack:securities", error: message(e) }); return null; }),
     getBackpackIssuedMints().catch((e) => { errors.push({ scope: "backpack:assets", error: message(e) }); return null; }),
     getCuratedUniverse(errors),
+    latestMeasurements(),
   ]);
 
   const rows = new Map<string, SnapshotRow>();
@@ -107,6 +109,7 @@ export async function collectSnapshots(opts: { date?: string; concurrency?: numb
           assetId: asset.assetId,
           canonicalSource: asset.canonicalMarket?.source,
           issuerConfirmed: backpackMints?.has(v.mint),
+          measuredExit: forScore(measured.get(v.mint)),
         });
         rows.set(v.mint, toRow(v, s, { date, assetId: asset.assetId, assetClass }));
       }
@@ -192,7 +195,9 @@ interface StoredRow {
  */
 export async function rescoreSnapshots(date: string) {
   const errors: SnapshotResult["errors"] = [];
-  const [stored, securities, assets] = await Promise.all([
+  // Only measurements taken that day: a date with none re-scores on pool depth, as it was scored.
+  const [measured, stored, securities, assets] = await Promise.all([
+    measurementsOn(date),
     selectRows<StoredRow>(
       "variant_snapshots",
       `select=mint,symbol,asset_id,asset_class,issuer_confirmed,flags,score,grade,method_version,raw&snapshot_date=eq.${date}&order=id`,
@@ -208,6 +213,7 @@ export async function rescoreSnapshots(date: string) {
       assetId: r.asset_id,
       canonicalSource: asset?.canonicalMarket?.source,
       issuerConfirmed: r.issuer_confirmed,
+      measuredExit: forScore(measured.get(r.mint)),
     };
     const s = scoreVariant(r.raw, ctx);
     const from = `${r.grade}(${r.score ?? "–"})`, to = `${s.grade}(${s.score ?? "–"})`;
