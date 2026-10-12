@@ -24,6 +24,8 @@ const KEY = process.env.JUPITER_API_KEY?.trim();
 const BASE = KEY ? "https://api.jup.ag/swap/v1" : "https://lite-api.jup.ag/swap/v1";
 const AUTH: HeadersInit = KEY ? { "x-api-key": KEY } : {};
 const ORDER_BASE = KEY ? "https://api.jup.ag/swap/v2" : null;
+/** Whether the order route (market makers) can be asked at all — it needs the API key. */
+export const ORDER_ROUTE_ENABLED = ORDER_BASE != null;
 
 export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const USDC_DECIMALS = 6;
@@ -124,7 +126,9 @@ async function getJson(url: string, { fresh = false }: { fresh?: boolean } = {})
   const hit = fresh ? null : cached(url);
   if (hit) return hit;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // Four attempts: our key is shared by every server instance and the measurement job, which each
+  // pace themselves but not each other, so a 429 is routine and usually clears within a second or two.
+  for (let attempt = 0; attempt < 4; attempt++) {
     const wait = backoffUntil - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, Math.min(wait, 3_000)));
 
@@ -257,6 +261,10 @@ export interface BestQuote {
   routeLabels: string[];
   /** The pool route's own answer, when it had one — kept so a page can say what pools alone give. */
   pool: Quote | null;
+  /** False when one of the two routes could not be reached. The quote is then only the better of
+   *  what answered, and may be far worse than the real best: measured 2026-10-12, with the order
+   *  route rate-limited, TSLAon read 12% through pools while market makers were quoting 0.4%. */
+  complete: boolean;
 }
 
 /**
@@ -276,11 +284,12 @@ export async function bestQuote(
     orderQuote(inputMint, outputMint, rawAmount),
   ]);
   const poolQuote = pool.ok ? pool.quote : null;
+  const complete = !((!pool.ok && pool.reason === "unavailable") || (ORDER_ROUTE_ENABLED && !order.ok && order.reason === "unavailable"));
   if (order.ok && (!poolQuote || BigInt(order.quote.outAmount) > BigInt(poolQuote.outAmount))) {
-    return { ok: true, quote: { outAmount: order.quote.outAmount, route: "order", liquidity: order.quote.liquidity, routeLabels: order.quote.routeLabels, pool: poolQuote } };
+    return { ok: true, quote: { outAmount: order.quote.outAmount, route: "order", liquidity: order.quote.liquidity, routeLabels: order.quote.routeLabels, pool: poolQuote, complete } };
   }
   if (poolQuote) {
-    return { ok: true, quote: { outAmount: poolQuote.outAmount, route: "pools", liquidity: "pools", routeLabels: poolQuote.routeLabels, pool: poolQuote } };
+    return { ok: true, quote: { outAmount: poolQuote.outAmount, route: "pools", liquidity: "pools", routeLabels: poolQuote.routeLabels, pool: poolQuote, complete } };
   }
   // Without a key the order route was never asked, so its "unavailable" says nothing: pools decide.
   if (!ORDER_BASE) return { ok: false, reason: pool.ok ? "no-route" : pool.reason };
@@ -356,6 +365,12 @@ export async function exitCost(mint: string, usdSize: number, slippageBps = 100,
 
   if (!outLeg.ok) return { ...empty, status: outLeg.reason, blockedOn: "out", routeLabels: inLeg.quote.routeLabels, poolsRoundTripPct };
 
+  // A route we could not reach on either leg means this may not be the best price. A cheap round
+  // trip is still a fact — the missing route could only have improved it. A costly one is not: it
+  // may be pools standing in for a market maker we failed to ask. That is "unavailable", never a loss.
+  const incomplete = !inLeg.quote.complete || !outLeg.quote.complete;
+  if (incomplete && pct(outLeg.quote.outAmount) >= 1) return { ...empty, status: "unavailable", poolsRoundTripPct };
+
   return {
     status: "ok",
     roundTripPct: pct(outLeg.quote.outAmount),
@@ -419,6 +434,9 @@ export async function sellNow(mint: string, rawAmount: bigint, valueUsd: number,
   const leg = await bestQuote(mint, USDC_MINT, rawAmount.toString(), { slippageBps });
   if (!leg.ok) return { ...empty, status: leg.reason };
   const receivedUsd = Number(leg.quote.outAmount) / 10 ** USDC_DECIMALS;
+  // One route unreachable and the sale looks poor (or cannot be judged): do not report it as the
+  // price. See exitCost — pools must never stand in, unmarked, for a market maker we failed to ask.
+  if (!leg.quote.complete && (valueUsd <= 0 || receivedUsd < valueUsd * 0.99)) return empty;
   return {
     status: "ok",
     receivedUsd,

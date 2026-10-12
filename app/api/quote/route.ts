@@ -5,7 +5,7 @@
 // measured by quoting the sale straight back. Read-only; nothing here asks for a signature.
 
 import { getMintDecimals, isSolanaAddress } from "@/lib/helius";
-import { bestQuote, orderQuote, preferOrder, quoteDetailed } from "@/lib/jupiter";
+import { bestQuote, ORDER_ROUTE_ENABLED, orderQuote, preferOrder, quoteDetailed } from "@/lib/jupiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +45,11 @@ export async function GET(request: Request) {
       return d == null ? null : Number(raw) / 10 ** d;
     };
 
+    // The market-maker route could not be reached: a pool quote alone may be a fraction of the real
+    // price, so there is no quote to show rather than a misleading one.
+    if (ORDER_ROUTE_ENABLED && !order.ok && order.reason === "unavailable") {
+      return Response.json({ status: "unavailable", inputMint, outputMint, amount: amountRaw });
+    }
     const viaOrder = preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null);
     if (!leg.ok && !viaOrder) {
       // "no-route" is a finding about the token; "unavailable" is about Jupiter; "market-closed" is

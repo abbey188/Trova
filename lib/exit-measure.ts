@@ -17,21 +17,34 @@ const DEAD_PCT = 50;           // a $5,000 round trip losing half is not worth a
 export interface MeasureTarget { mint: string; symbol: string }
 
 /** Every rung worth quoting for one token, in the order taken. "unavailable" rungs are dropped. */
+/** One rung, asked again after a pause when Jupiter could not be reached — a stored ladder with a
+ *  hole in it would understate what the token can absorb. */
+async function rung(mint: string, size: number): Promise<ExitCost> {
+  let r = await exitCost(mint, size, 100, { quick: true });
+  for (let retry = 0; retry < 2 && r.status === "unavailable"; retry++) {
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    r = await exitCost(mint, size, 100, { quick: true });
+  }
+  return r;
+}
+
 export async function measureLadder(mint: string): Promise<ExitCost[]> {
   const rungs: ExitCost[] = [];
-  const rule = await exitCost(mint, RULE_SIZE_USD, 100, { quick: true });
+  const rule = await rung(mint, RULE_SIZE_USD);
+  // No answer on the rule rung: store nothing, so the next call measures this token again.
+  if (rule.status === "unavailable") return [];
   rungs.push(rule);
 
   const cost = rule.status === "ok" ? rule.roundTripPct ?? 100 : null;
   if (cost != null && cost < STOP_CLIMBING_PCT) {
     for (const size of CLIMB) {
-      const r = await exitCost(mint, size, 100, { quick: true });
+      const r = await rung(mint, size);
       rungs.push(r);
       if (r.status !== "ok" || (r.roundTripPct ?? 100) >= STOP_CLIMBING_PCT) break;
     }
   }
   // Whether anything smaller works only matters when $5,000 neither passed cleanly nor failed outright.
-  if (cost != null && cost >= 1 && cost < DEAD_PCT) rungs.push(await exitCost(mint, 500, 100, { quick: true }));
+  if (cost != null && cost >= 1 && cost < DEAD_PCT) rungs.push(await rung(mint, 500));
 
   return rungs.filter((r) => r.status !== "unavailable");
 }

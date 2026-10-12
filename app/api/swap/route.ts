@@ -14,7 +14,7 @@
 // not the client's. The wallet shows the simulated result before the user approves anything.
 
 import { isSolanaAddress } from "@/lib/helius";
-import { orderQuote, preferOrder, quoteDetailed, swapTransaction } from "@/lib/jupiter";
+import { ORDER_ROUTE_ENABLED, orderQuote, preferOrder, quoteDetailed, swapTransaction } from "@/lib/jupiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +53,12 @@ export async function POST(request: Request) {
       quoteDetailed(inputMint, outputMint, amountRaw, { slippageBps, withFee: true, fresh: true }),
       orderQuote(inputMint, outputMint, amountRaw, { taker: userPublicKey }),
     ]);
+
+    // Never fall back to pools because the market-maker route could not be reached: for a token
+    // market makers fill, the pool price can be a fraction of the real one.
+    if (ORDER_ROUTE_ENABLED && !order.ok && order.reason === "unavailable") {
+      return Response.json({ status: "unavailable", error: "Jupiter is unavailable right now. Try again in a moment." }, { status: 409 });
+    }
 
     if (preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null) && order.ok && order.quote.transaction && order.quote.requestId) {
       return Response.json({
