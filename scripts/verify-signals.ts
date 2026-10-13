@@ -27,7 +27,7 @@ function check(name: string, fn: () => void) {
 const dayStart = (date: string) => Date.parse(`${date}T00:00:00Z`);
 
 const BASE: SnapshotPoint = {
-  snapshot_date: "2026-09-01", mint: "Mint111", asset_id: "tesla", symbol: "TSLAx", method_version: "v3.2",
+  snapshot_date: "2026-09-01", mint: "Mint111", asset_id: "tesla", symbol: "TSLAx", method_version: "v4.0",
   score: 87, grade: "A", exit: 80, tier: "tier2", stock_variant_tier: "cash_redeemable",
   advisory_status: null, advisory_reason: null, instrument_class: "backed-tracker", routable: true, not_routable_reason: null,
 };
@@ -85,8 +85,16 @@ check("grade change held for 3 snapshots alerts exactly once, on the confirming 
 });
 
 check("grade change caused by a method-version change is ignored", () => {
-  const h = history({ grade: "A", method_version: "v3.1" }, { grade: "B" }, { grade: "B" }, { grade: "B" });
+  const h = history({ grade: "A", method_version: "v4.0-earlier" }, { grade: "B" }, { grade: "B" }, { grade: "B" });
   assert.equal(kinds(h, "grade-change").length, 0);
+});
+
+check("no grade or tradability signal is drawn from pool-only (pre-v4) snapshots", () => {
+  const old = { method_version: "v3.2-2026-09-15" };
+  const lost = history({ ...old, routable: true }, { ...old, routable: false }, { ...old, routable: false }, { ...old, routable: false });
+  assert.equal(kinds(lost, "routability-change").length, 0);
+  const graded = history({ ...old, grade: "C" }, { ...old, grade: "D" }, { ...old, grade: "D" }, { ...old, grade: "D" });
+  assert.equal(kinds(graded, "grade-change").length, 0);
 });
 
 check("losing tradability for 3 snapshots → warn; a one-day blip → nothing", () => {

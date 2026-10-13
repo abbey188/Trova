@@ -56,9 +56,17 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
+/**
+ * Before v4.0 a token's grade, tradability and exit score were read off pool depth, which is blind to
+ * tokens that market makers fill. A change in them was a change in a pool, not in whether the token
+ * could be left — "TSLAon stopped being tradable" was reported while it left for 0.4%. Those
+ * snapshots stay in the history, but no grade, tradability or exit signal is drawn from them.
+ */
+const poolsOnly = (p: SnapshotPoint) => /^v[0-3]\./.test(p.method_version);
+
 /** A change in `key` confirmed at index i: the last PERSISTENCE snapshots agree and differ from the one before. */
 function confirmedChange<K extends "grade" | "routable">(h: SnapshotPoint[], i: number, key: K) {
-  if (i < PERSISTENCE) return null;
+  if (i < PERSISTENCE || poolsOnly(h[i])) return null;
   const before = h[i - PERSISTENCE];
   const to = h[i][key];
   if (before[key] === to) return null;
@@ -70,7 +78,7 @@ function confirmedChange<K extends "grade" | "routable">(h: SnapshotPoint[], i: 
 /** Market health moved ≥ MARKET_CHANGE_POINTS from its baseline median and held for PERSISTENCE snapshots. */
 function exitShift(h: SnapshotPoint[], i: number) {
   const start = i - PERSISTENCE - MARKET_BASELINE_SNAPSHOTS + 1;
-  if (start < 0) return null;
+  if (start < 0 || poolsOnly(h[i]) || poolsOnly(h[start])) return null;
   const baseline = median(h.slice(start, i - PERSISTENCE + 1).map((p) => p.exit));
   const run = h.slice(i - PERSISTENCE + 1, i + 1);
   const justBefore = h[i - PERSISTENCE];
