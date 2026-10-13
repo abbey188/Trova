@@ -11,6 +11,7 @@ import Link from "next/link";
 import { CompanyLogoStatic } from "@/components/trova/logo-static";
 import { BrowseMarkets, ConnectedRedirect, HowItWorksLink, LandingConnect } from "@/components/trova/landing-bits";
 import { buildAssetDetail } from "@/lib/asset";
+import { cachedSheet } from "@/lib/collateral-cache";
 import { count, usd } from "@/lib/format";
 import { getMonitoringStats } from "@/lib/history";
 import { exitCost } from "@/lib/jupiter";
@@ -147,6 +148,42 @@ function Cluster({ items, more, size }: { items: { id: string; name: string; log
   );
 }
 
+/**
+ * The second thing Trova is, introduced under the fold: the same measurements, read by someone lending
+ * against these tokens rather than holding them. The three figures are counted live from the sheet.
+ */
+function LendersBand({ stats, compact }: { stats: { measured: number; million: number; shut: number } | null; compact?: boolean }) {
+  const figures: [string, string][] = stats ? [
+    [String(stats.measured), "tokens measured in US market hours"],
+    [String(stats.million), "leave $1M or more for under 1%"],
+    [String(stats.shut), "do not trade when the market is shut"],
+  ] : [];
+  return (
+    <section style={{ borderTop: "1px solid var(--hairline)", padding: compact ? "26px 0 6px" : "44px 56px 56px", marginTop: compact ? 26 : 0, display: "flex", flexDirection: compact ? "column" : "row", gap: compact ? 18 : 60, alignItems: compact ? "stretch" : "flex-start" }}>
+      <div style={{ width: compact ? "auto" : 560, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+        <span style={{ fontSize: 11, letterSpacing: 0.8, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>For lenders and risk teams</span>
+        <h2 style={{ margin: "14px 0 0", ...D, fontSize: compact ? 26 : 36, lineHeight: 1.08, fontWeight: 700, letterSpacing: compact ? -0.6 : -1 }}>How much of it can actually be sold</h2>
+        <p style={{ margin: "14px 0 0", fontSize: compact ? 14 : 15, lineHeight: 1.6, color: "var(--ink-soft)", maxWidth: "50ch" }}>
+          Trova quotes a real round trip in every tokenized stock on Solana, from $5,000 up to $25 million, in US market hours and outside them, and reads what the issuer can do to the token on-chain. The collateral sheet puts it in one table: how much leaves for under 1%, what a liquidator could sell inside the bonus, and which tokens stop trading when the market shuts.
+        </p>
+        <div style={{ marginTop: 20 }}>
+          <Link href="/lenders" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", height: compact ? 50 : 52, width: compact ? "100%" : "auto", padding: "0 24px", borderRadius: 14, fontSize: 15, fontWeight: 700, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", textDecoration: "none", boxSizing: "border-box" }}>Open the collateral sheet</Link>
+        </div>
+      </div>
+      {figures.length > 0 && (
+        <div style={{ flexGrow: 1, display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(3, 1fr)", gap: 12 }}>
+          {figures.map(([value, label]) => (
+            <div key={label} style={{ border: "1px solid var(--hairline)", borderRadius: 16, padding: compact ? "14px 16px" : "18px 20px", display: "flex", flexDirection: compact ? "row" : "column", alignItems: compact ? "baseline" : "flex-start", gap: compact ? 10 : 6 }}>
+              <span style={{ ...N, fontSize: compact ? 22 : 34, fontWeight: 700 }}>{value}</span>
+              <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-soft)" }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const lockIcon = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
 const logoMark = (s: number) => (
   <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: s, height: s, borderRadius: s * 0.3, background: "var(--action)" }}>
@@ -172,6 +209,12 @@ export default async function Landing() {
   const goodMm = d.goodTrip?.liquidity === "market-maker";
   const thinMm = d.thinTrip?.liquidity === "market-maker";
   const more = d.tracked != null ? d.tracked - d.cluster.length : null;
+  const sheet = await cachedSheet().catch(() => null);
+  const lenderStats = sheet ? {
+    measured: sheet.measuredInHours,
+    million: sheet.rows.filter((r) => (r.open?.under1Usd ?? 0) >= 1_000_000).length,
+    shut: sheet.rows.filter((r) => r.closed?.status5k === "market-closed").length,
+  } : null;
 
   const goodLine = goodPct != null && d.good
     ? <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{owns(d.good)}. Costs <b style={{ color: "var(--grade-a)" }}>{goodPct.toFixed(2)}%</b> to get in and back out at $500.</span>
@@ -196,6 +239,7 @@ export default async function Landing() {
           <span style={{ ...D, fontSize: 26, fontWeight: 700, letterSpacing: -0.8 }}>Trova</span>
           <span style={{ flexGrow: 1 }} />
           <Link href="/markets" style={{ fontSize: 14, fontWeight: 600, textDecoration: "none", color: "var(--ink)", padding: "12px 18px" }}>Markets</Link>
+          <Link href="/lenders" style={{ fontSize: 14, fontWeight: 600, textDecoration: "none", color: "var(--ink)", padding: "12px 18px" }}>For lenders</Link>
           <HowItWorksLink />
           <LandingConnect />
         </header>
@@ -225,6 +269,7 @@ export default async function Landing() {
             </div>
           )}
         </div>
+        <LendersBand stats={lenderStats} />
       </div>
 
       {/* ---------------- mobile ---------------- */}
@@ -249,6 +294,7 @@ export default async function Landing() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 16 }}>
           {lockIcon}<span style={{ fontSize: 11, color: "var(--ink-faint)" }}>We only read your public address</span>
         </div>
+        <LendersBand stats={lenderStats} compact />
       </div>
     </div>
   );

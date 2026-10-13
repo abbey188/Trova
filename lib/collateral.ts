@@ -7,7 +7,7 @@
 //
 // Measurements began on 2026-10-12. A token with no stored ladder says so; nothing is filled in.
 
-import { getExternalKlines, type BpKline } from "./backpack";
+import { getBackpackIssuedMints, getExternalKlines, type BpKline } from "./backpack";
 import { latestMeasurements, type StoredExit } from "./exit-store";
 import { selectRows } from "./supabase-rest";
 import { getMintFacts } from "./token-extensions";
@@ -105,7 +105,7 @@ async function latestSnapshot(filter = ""): Promise<{ date: string | null; rows:
   return { date: latest.snapshot_date, rows };
 }
 
-function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerControls | null): CollateralRow {
+function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerControls | null, backpackIssued = false): CollateralRow {
   const open = sessionExit(stored?.scored);
   return {
     mint: r.mint,
@@ -113,7 +113,7 @@ function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerC
     assetId: r.asset_id,
     assetClass: r.asset_class,
     // A ticker is not an issuer (older snapshots stored the token's own symbol as its label).
-    issuer: r.issuer && r.issuer.toUpperCase() !== r.symbol.toUpperCase() ? r.issuer : "Not reported",
+    issuer: backpackIssued ? "Backpack Securities" : r.issuer && r.issuer.toUpperCase() !== r.symbol.toUpperCase() && r.issuer !== "Unknown" ? r.issuer : "Not reported",
     instrumentClass: r.instrument_class,
     redemption: r.stock_variant_tier,
     speculative: r.speculative,
@@ -125,6 +125,19 @@ function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerC
     liquidatableAt5Usd: liquidatable(open, 5).sizeUsd,
   };
 }
+
+/**
+ * The sheet cut by who issues the token — the cut a risk team works in, because issuers differ in what
+ * they can do to the token and in who fills it. Each segment is its own page under /lenders.
+ */
+export const SEGMENTS = [
+  { slug: "ondo", label: "Ondo", blurb: "Ondo Global Markets tokens. Filled by market makers; their pools are close to empty.", match: (r: CollateralRow) => r.issuer === "Ondo" },
+  { slug: "xstocks", label: "xStocks", blurb: "xStocks tokens, issued by Backed. Filled by pools and by market makers, depending on size and hour.", match: (r: CollateralRow) => r.issuer === "xStock" || r.issuer === "Backed" },
+  { slug: "backpack", label: "Backpack", blurb: "Tokens issued by Backpack Securities, redeemable for the share itself. Filled mostly from pools.", match: (r: CollateralRow) => r.issuer === "Backpack Securities" },
+  { slug: "private", label: "Private companies", blurb: "Exposure to companies with no public market, through an SPV. No redemption, and no listed share to compare against. Always labelled speculative.", match: (r: CollateralRow) => r.speculative },
+  { slug: "funds-and-metals", label: "ETFs and metals", blurb: "Tokens tracking a fund or a metal rather than one company.", match: (r: CollateralRow) => !r.speculative && (r.assetClass === "etf" || r.assetClass === "metal") },
+] as const;
+export type Segment = (typeof SEGMENTS)[number];
 
 export interface CollateralSheet {
   asOf: string;
@@ -139,10 +152,10 @@ export interface CollateralSheet {
 
 /** Every tracked token, most absorbent first (in-hours capacity, then holders). */
 export async function buildCollateralSheet(): Promise<CollateralSheet> {
-  const [{ date, rows }, measured] = await Promise.all([latestSnapshot(), latestMeasurements()]);
+  const [{ date, rows }, measured, backpack] = await Promise.all([latestSnapshot(), latestMeasurements(), getBackpackIssuedMints().catch(() => new Set<string>())]);
   const facts = await getMintFacts(rows.map((r) => r.mint)).catch(() => new Map());
   const out = rows
-    .map((r) => toRow(r, measured.get(r.mint), facts.get(r.mint)?.controls ?? null))
+    .map((r) => toRow(r, measured.get(r.mint), facts.get(r.mint)?.controls ?? null, backpack.has(r.mint)))
     .sort((a, b) => (b.open?.under1Usd ?? -1) - (a.open?.under1Usd ?? -1) || (b.closed?.under1Usd ?? -1) - (a.closed?.under1Usd ?? -1) || (b.holders ?? 0) - (a.holders ?? 0));
   return {
     asOf: new Date().toISOString(),
@@ -192,8 +205,8 @@ export async function buildCollateralFile(mint: string): Promise<CollateralFile 
   const [{ rows }, measured] = await Promise.all([latestSnapshot(`&mint=eq.${mint}`), latestMeasurements([mint])]);
   const snap = rows[0];
   if (!snap) return null;
-  const facts = await getMintFacts([mint]).catch(() => new Map());
-  const row = toRow(snap, measured.get(mint), facts.get(mint)?.controls ?? null);
+  const [facts, backpack] = await Promise.all([getMintFacts([mint]).catch(() => new Map()), getBackpackIssuedMints().catch(() => new Set<string>())]);
+  const row = toRow(snap, measured.get(mint), facts.get(mint)?.controls ?? null, backpack.has(mint));
 
   const oneForOne = (snap.asset_class === "stock" || snap.asset_class === "etf") && !snap.speculative;
   const ticker = snap.symbol.replace(/(x|on)$/, "").toUpperCase();
