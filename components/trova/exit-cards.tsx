@@ -93,7 +93,7 @@ export function ExitCard({ mint, heldUsd }: { mint: string; heldUsd?: number | n
   const shut = ruleRung(q.data?.closedSession?.ladder);
   const result = mine.data?.ladder[0];
   const parsed = Number(draft.replace(/[$,\s]/g, ""));
-  const valid = Number.isFinite(parsed) && parsed >= 1 && parsed <= 10_000_000;
+  const valid = Number.isFinite(parsed) && parsed >= 1 && parsed <= 25_000_000;
 
   return (
     <Panel style={{ padding: "16px 18px" }}>

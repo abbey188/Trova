@@ -31,7 +31,13 @@ import type {
   MeasuredExit, ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
-export const METHOD_VERSION = "v4.0-2026-10-12";
+export const METHOD_VERSION = "v4.1-2026-10-13";
+
+// v4.1: a measured exit is the direct answer to "can I get out", so when one exists it carries most
+// of Exit; activity, holders and fill quality are indirect signals of the same thing and share the
+// rest. Under v4.0's equal mean, 200-odd Ondo tokens that left $1M for 0.4% in market hours graded C
+// for having few on-chain holders. Unmeasured tokens keep the equal mean — there, every input is indirect.
+export const MEASURED_DEPTH_WEIGHT = 0.6;
 
 export const RULE_SIZE_USD = 5_000;        // the round trip the "tradable" rule is measured at
 export const MAX_TRADABLE_COST_PCT = 5;    // a measured $5,000 round trip must cost less than this
@@ -54,10 +60,12 @@ const ANCHORS = {
   holders: [[10, 0], [70, 10], [400, 25], [2_000, 50], [9_000, 75], [25_000, 90], [100_000, 100]],
   trades24h: [[1, 0], [5, 10], [40, 25], [2_500, 50], [12_500, 75], [32_000, 90], [150_000, 100]],
   volume24hUsd: [[100, 0], [200, 10], [5_000, 25], [150_000, 50], [1_200_000, 75], [2_500_000, 90], [25_000_000, 100]],
-  // Measured capacity: the largest size that round-trips for under 1%. The measurement ladder has
-  // five sizes, so capacity is one of them (or nothing) and each sits on an anchor — a token that
-  // leaves $5,000 under 1% is the middle of the tradable field, one that leaves $1M is the top.
-  exitCapacityUsd: [[100, 0], [500, 25], [5_000, 50], [50_000, 75], [250_000, 90], [1_000_000, 100]],
+  // Measured capacity: the largest size that round-trips for under 1%. Capacity is one of the
+  // ladder's sizes (or nothing), and each sits on an anchor. This is an ABSOLUTE scale, not a
+  // percentile: measured 2026-10-12 in market hours, 221 of 331 tradable tokens left $1M, so "the
+  // median tradable token" sits at the top of any ladder that stops there. $5M and $25M were added in
+  // v4.1 so the scale can tell those tokens apart — and because those are the sizes a lender asks about.
+  exitCapacityUsd: [[100, 0], [500, 25], [5_000, 50], [50_000, 75], [250_000, 90], [1_000_000, 95], [5_000_000, 98], [25_000_000, 100]],
 } as const satisfies Record<string, Anchors>;
 
 // Provider-documented redemption path (tokens.xyz stockVariantTier). Unreported is the
@@ -285,9 +293,12 @@ function exitPillar(v: TxzVariant, measured: MeasuredFacts | null): PillarScore<
     roundTripPct: measured?.costPct ?? null,
     filledBy: measured?.filledBy ?? null,
   };
-  const parts = [components.liquidity, components.activity, components.holders];
-  if (components.execution != null) parts.push(components.execution);
-  const score = round(parts.reduce((s, x) => s + x, 0) / parts.length);
+  const rest = [components.activity, components.holders];
+  if (components.execution != null) rest.push(components.execution);
+  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const score = round(measured
+    ? MEASURED_DEPTH_WEIGHT * components.liquidity + (1 - MEASURED_DEPTH_WEIGHT) * mean(rest)
+    : mean([components.liquidity, ...rest]));
   return { score, grade: gradeOf(score), components };
 }
 

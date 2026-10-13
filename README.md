@@ -25,7 +25,10 @@ Market-only risk scores miss this. tokens.xyz's own market score rates Tesla, Sp
 | **Reads your wallet** | Paste or connect a wallet: holdings, a value-weighted **Trova Portfolio Score**, what needs attention, and what selling each holding would return *right now*. |
 | **Knows which one you hold** | Open a company from a holding and Trova leads with *your* token — and, if it isn't the soundest, the sounder one of the same company, side by side. |
 | **Measures the exit** | "Cost to leave" is a real round trip quoted through Jupiter — buy, then sell straight back — on the better of its two routes (pools, or a market maker's quote). Measured and stored daily, not modelled. |
-| **Acts** | Buy, move from a weak token to a sound one, or sell back to USDC. One signature, from your own wallet. |
+| **Shows it at your size** | Type any amount on a token's page: what it costs to leave at that size, the largest size that leaves under 1% and 5%, and whether pools or a market maker would fill it. In market hours and out of them. |
+| **Reads the issuer's controls** | Straight from the token's mint: whether the issuer can move tokens from any wallet, pause transfers, freeze an account, mint more, or charge a fee on every transfer. Stated neutrally; none of it moves the rating. |
+| **Gives lenders the numbers** | The largest size a liquidator could sell inside the liquidation bonus, and the real share's largest move across a market closure. Measured facts, not a recommendation. |
+| **Acts** | Buy, move from a weak token to a sound one, or sell back to USDC, on whichever Jupiter route fills better. One signature, from your own wallet. |
 | **Watches for change** | Daily snapshots; a rating or tradability change must hold for three days before it alerts you. |
 
 ## The Trova Score
@@ -39,7 +42,7 @@ Two questions, asked of every token, and nothing else.
 | Redemption | 70% | Redeems for the share **100** · for its cash value **75** · not reported **50** (or the most conservative value its class reports) · not redeemable **30** |
 | What it entitles you to | 30% | Full economic exposure **100** · leveraged **40** · pre-IPO / SPV exposure **0** |
 
-**Exit — can you get back out?** The mean of depth, activity (trades and volume), holders, and fill quality (when reported). Depth is the largest size measured to round-trip for under 1%; a token with no stored measurement is scored on pool depth instead. Each is scored against fixed anchors, so 50 means "the median tradable token".
+**Exit — can you get back out?** Depth, activity (trades and volume), holders, and fill quality (when reported), each scored against fixed anchors. Depth is the largest size measured to round-trip for under 1%, from $5,000 up to $25M, and carries 60% of Exit; the others share the rest. A token with no stored measurement is scored on pool depth instead, with all four counting equally.
 
 **Combined:** `Trova Score = √(Ownership × Exit)` — multiplied, not averaged, so a busy market cannot hide that you own nothing, and perfect paperwork cannot hide a dead market.
 
@@ -77,7 +80,7 @@ The full method — with worked examples — is at **[/docs](https://trovascore.
 | [Pyth](https://pyth.network) | Reference prices for the real share or metal, with confidence and age |
 | [Backpack](https://backpack.exchange) | Second source: real US stock prices and history, CUSIPs, market hours, issuer confirmation |
 | Helius RPC | Reading token accounts (SPL + Token-2022, including scaled-UI-amount splits) and sending transactions |
-| Supabase | Daily rating snapshots; per-device watchlist and profile |
+| Supabase | Daily rating snapshots and exit measurements; per-device watchlist and profile |
 | Wikipedia · Financial Modeling Prep | "About" text and company logos where tokens.xyz has none (credited on the page) |
 
 ## Architecture
@@ -93,8 +96,8 @@ The full method — with worked examples — is at **[/docs](https://trovascore.
 | `GET /api/asset/<id>` | Every token of a company, ranked, with its full rating and explanation |
 | `GET /api/markets` · `/api/search?q=` | Every company, graded |
 | `GET /api/signals` · `/api/history` | What changed, and the rating over time |
-| `GET /api/exit?mint=` · `/api/quote` | Measured cost to leave · a quote with the sale straight back |
-| `POST /api/swap` | An unsigned transaction for the wallet to sign |
+| `GET /api/exit?mint=` · `/api/quote` | The stored exit ladder, or any size quoted now · a quote with the sale straight back |
+| `POST /api/swap` · `/api/swap/execute` | An unsigned transaction for the wallet to sign · relays a signed market-maker fill to Jupiter |
 
 ## Run it locally
 
@@ -113,7 +116,14 @@ pnpm snapshot        # write today's snapshot to Supabase
 
 Apply the SQL in `supabase/migrations/` to a Supabase project for snapshots, the watchlist and profiles. Without Supabase the app still runs; history and the watchlist say they are unavailable.
 
+## History of this project
+
+Trova was first built between 13 and 25 September 2026 and entered in Stocklana (Solana Foundation). Work since 10 October 2026: exit measured on both Jupiter routes and stored daily by market session; score v4 (Exit read from the measurement); exit at your size and the 1% / 5% ceilings; issuer controls read from Token-2022 mints; the lender view; trades executed on the better route; and corrections to valuation and to earlier claims that rested on pool depth alone.
+
 ## Honest limits
+
+- Exit measurements began on 12 October 2026. Before that Trova read pool depth only, which misjudged every token that market makers fill; that history cannot be re-measured.
+- What a token costs to leave changes by the hour. Measurements are stored separately for US market hours and outside them, and the rating uses the in-hours one.
 
 - Ratings cover what tokens.xyz reports; where an issuer reports nothing, Trova says so and lowers confidence.
 - Selling is to USDC for now.

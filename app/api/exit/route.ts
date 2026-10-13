@@ -20,7 +20,7 @@ export const maxDuration = 60;
 
 const LIVE_SIZES = [5_000, 50_000, 250_000];
 const MAX_SIZES = 5;
-const MAX_USD = 10_000_000;
+const MAX_USD = 25_000_000;
 const STORED_FRESH_MS = 36 * 3_600_000;
 
 type Rung = { usdSize: number; status: string; roundTripPct: number | null; routable: boolean; blockedOn?: string | null; routeLabels: string[]; liquidity?: string | null; poolsRoundTripPct?: number | null };

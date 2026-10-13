@@ -299,7 +299,13 @@ check("a market-maker-filled token with empty pools is tradable when its measure
   assert.equal(s.routable, true);
   assert.equal(s.exit.components.measured, true);
   assert.equal(s.exit.components.capacityUsd, 1_000_000);
-  assert.equal(s.exit.components.liquidity, 100);
+  assert.equal(s.exit.components.liquidity, 95);
+  // Measured depth carries 60% of Exit; activity (0) and holders share the other 40%.
+  assert.equal(s.exit.score, Math.round(0.6 * 95 + 0.4 * ((s.exit.components.activity + s.exit.components.holders) / 2)));
+
+  const deeper = scoreVariant(v, { measuredExit: measured("open", rung(5_000, 0.4), rung(50_000, 0.4), rung(250_000, 0.4), rung(1_000_000, 0.4), rung(5_000_000, 0.5), rung(25_000_000, 0.6)) });
+  assert.equal(deeper.exit.components.capacityUsd, 25_000_000);
+  assert.equal(deeper.exit.components.liquidity, 100);
   assert.ok(!s.flags.includes("thin-liquidity"));
   assert.ok(s.exit.score > pools.exit.score);
 });

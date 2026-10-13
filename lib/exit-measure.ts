@@ -10,7 +10,7 @@ import { measuredMints, usSession, writeMeasurements, type ExitMeasurementRow } 
 import { selectRows } from "./supabase-rest";
 import { RULE_SIZE_USD } from "./trust-score";
 
-const CLIMB = [50_000, 250_000, 1_000_000];
+const CLIMB = [50_000, 250_000, 1_000_000, 5_000_000, 25_000_000];
 const STOP_CLIMBING_PCT = 5;   // past this the next size up can only be worse
 const DEAD_PCT = 50;           // a $5,000 round trip losing half is not worth asking again at $500
 

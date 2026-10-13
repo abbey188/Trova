@@ -174,11 +174,15 @@ function executionFact(v: TxzVariant, s: TrovaScore): string {
 function drivers(v: TxzVariant, s: TrovaScore, trend?: TrendSummary | null): Driver[] {
   const c = s.ownership.components;
   const x = s.exit.components;
-  const exitWeight = x.execution == null ? "1 of 3 in Exit" : "1 of 4 in Exit";
+  // A measured depth carries 60% of Exit and the other measures share the rest (trust-score.ts);
+  // with no measurement all of them count equally.
+  const others = x.execution == null ? 2 : 3;
+  const exitWeight = x.measured ? `1 of ${others} sharing 40% of Exit` : x.execution == null ? "1 of 3 in Exit" : "1 of 4 in Exit";
+  const depthWeight = x.measured ? "60% of Exit" : exitWeight;
   const list: Driver[] = [
     { key: "redemption", pillar: "ownership", label: "Can you swap it for the real share?", score: c.redemption, fact: redemptionFact(v, s), weight: "70% of Ownership" },
     { key: "product", pillar: "ownership", label: "What the token entitles you to", score: c.product, fact: productFact(s), weight: "30% of Ownership" },
-    { key: "liquidity", pillar: "exit", label: "Depth of the market", score: x.liquidity, fact: liquidityFact(v, s, trend), weight: exitWeight },
+    { key: "liquidity", pillar: "exit", label: "Depth of the market", score: x.liquidity, fact: liquidityFact(v, s, trend), weight: depthWeight },
     { key: "activity", pillar: "exit", label: "How much it actually trades", score: x.activity, fact: activityFact(v), weight: exitWeight },
     { key: "holders", pillar: "exit", label: "How many people hold it", score: x.holders, fact: holdersFact(v, trend), weight: exitWeight },
     { key: "execution", pillar: "exit", label: "Quality of the fills", score: x.execution, fact: executionFact(v, s), weight: x.execution == null ? null : exitWeight },
