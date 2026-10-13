@@ -6,7 +6,7 @@
 // 1% is not asked at $500. Sizes that were never quoted are simply absent from the record.
 
 import { exitCost, type ExitCost } from "./jupiter";
-import { measuredMints, usSession, writeMeasurements, type ExitMeasurementRow } from "./exit-store";
+import { lastMeasured, measuredMints, usSession, writeMeasurements, type ExitMeasurementRow } from "./exit-store";
 import { selectRows } from "./supabase-rest";
 import { RULE_SIZE_USD } from "./trust-score";
 
@@ -65,20 +65,29 @@ export function toRows(target: MeasureTarget, rungs: ExitCost[], date: string, s
   }));
 }
 
+/** The tokens measured first in every run, however short: the ones a holder or lender is most likely to ask about. */
+const ALWAYS_FIRST = 150;
+
 /**
- * The tokens to measure, most worth measuring first: tradable ones, then by score. The dead tail
- * costs two or three quotes a token and is reached when the budget allows.
+ * The tokens to measure, in the order to measure them. The first ALWAYS_FIRST — tradable, then by
+ * score — lead every run, so a run that is cut short still has the tokens that matter. The rest
+ * follow by how long ago they were last measured in this session, never-measured first: a day's
+ * runs may not reach all of them, and without the rotation the same tail would go unmeasured every
+ * day while the same middle was measured again.
  */
-export async function measureTargets(): Promise<MeasureTarget[]> {
+export async function measureTargets(session: "open" | "closed" = usSession()): Promise<MeasureTarget[]> {
   const [latest] = await selectRows<{ snapshot_date: string }>("variant_snapshots", "select=snapshot_date&order=snapshot_date.desc&limit=1");
   if (!latest) return [];
   const rows = await selectRows<{ mint: string; symbol: string; routable: boolean; score: number | null; issuer: string | null; liquidity_usd: number | null }>(
     "variant_snapshots",
     `select=mint,symbol,routable,score,issuer,liquidity_usd&snapshot_date=eq.${latest.snapshot_date}&order=id`,
   );
-  return rows
-    .sort((a, b) => Number(b.routable) - Number(a.routable) || (b.score ?? -1) - (a.score ?? -1) || (b.liquidity_usd ?? 0) - (a.liquidity_usd ?? 0))
-    .map((r) => ({ mint: r.mint, symbol: r.symbol }));
+  const ranked = rows.sort((a, b) => Number(b.routable) - Number(a.routable) || (b.score ?? -1) - (a.score ?? -1) || (b.liquidity_usd ?? 0) - (a.liquidity_usd ?? 0));
+  const last = await lastMeasured(session).catch(() => new Map<string, string>());
+  const head = ranked.slice(0, ALWAYS_FIRST);
+  // Stable sort: tokens measured equally long ago keep their ranked order.
+  const tail = ranked.slice(ALWAYS_FIRST).sort((a, b) => (last.get(a.mint) ?? "").localeCompare(last.get(b.mint) ?? ""));
+  return [...head, ...tail].map((r) => ({ mint: r.mint, symbol: r.symbol }));
 }
 
 export interface MeasureRunSummary {
@@ -100,7 +109,7 @@ export async function runMeasurement(opts: { budgetMs?: number; limit?: number; 
   const started = Date.now();
   const date = new Date().toISOString().slice(0, 10);
   const session = usSession();
-  const targets = await measureTargets();
+  const targets = await measureTargets(session);
   const done = await measuredMints(date, session).catch(() => new Set<string>());
   const todo = targets.filter((t) => !done.has(t.mint)).slice(0, opts.limit ?? Infinity);
 

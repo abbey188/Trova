@@ -127,6 +127,53 @@ export async function measuredMints(date: string, session: "open" | "closed"): P
   return new Set(rows.map((r) => r.mint));
 }
 
+export interface CoverageDay {
+  date: string;
+  session: "open" | "closed";
+  /** Tokens with a stored $5,000 rung that day and session — every measured token has one. */
+  tokens: number;
+  quoted: number;
+  noRoute: number;
+  marketClosed: number;
+  firstAt: string;
+  lastAt: string;
+}
+
+interface RuleRung { mint: string; snapshot_date: string; session: "open" | "closed"; status: ExitQuote["status"]; taken_at: string }
+
+/** The $5,000 rung of every stored ladder in the window — one row per token, day and session. */
+async function ruleRungs(days: number): Promise<RuleRung[]> {
+  return selectRows<RuleRung>("exit_measurements", `select=mint,snapshot_date,session,status,taken_at&size_usd=eq.5000&snapshot_date=gte.${sinceDate(days)}&order=id`);
+}
+
+/**
+ * How much of the token list was measured, per day and market session, newest first. The record is
+ * only worth something unbroken, so its gaps are published rather than left to be discovered.
+ */
+export async function coverage(days = 30): Promise<CoverageDay[]> {
+  const byKey = new Map<string, CoverageDay>();
+  for (const r of await ruleRungs(days)) {
+    const key = `${r.snapshot_date}|${r.session}`;
+    const d = byKey.get(key) ?? byKey.set(key, { date: r.snapshot_date, session: r.session, tokens: 0, quoted: 0, noRoute: 0, marketClosed: 0, firstAt: r.taken_at, lastAt: r.taken_at }).get(key)!;
+    d.tokens++;
+    if (r.status === "ok") d.quoted++;
+    else if (r.status === "no-route") d.noRoute++;
+    else if (r.status === "market-closed") d.marketClosed++;
+    if (r.taken_at < d.firstAt) d.firstAt = r.taken_at;
+    if (r.taken_at > d.lastAt) d.lastAt = r.taken_at;
+  }
+  return [...byKey.values()].sort((a, b) => b.date.localeCompare(a.date) || a.session.localeCompare(b.session));
+}
+
+/** When each mint was last measured in a session, within the last `days`. Absent = not in that window. */
+export async function lastMeasured(session: "open" | "closed", days = 10): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const r of await ruleRungs(days)) {
+    if (r.session === session && (out.get(r.mint) ?? "") < r.taken_at) out.set(r.mint, r.taken_at);
+  }
+  return out;
+}
+
 export interface ContrastPair { assetId: string; goodMint: string; thinMint: string }
 
 /**

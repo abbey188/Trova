@@ -26,7 +26,18 @@ async function main() {
     `${s.remaining} remaining · ${dryRun ? "DRY RUN (nothing written)" : `${s.rowsWritten} rows written`} · ${s.seconds}s`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// A run is an hour or more of network calls, and one dropped connection used to end it (it did, twice,
+// on 2026-10-12). The job is resumable, so a failure is answered by waiting and carrying on.
+async function withRetries(attempts = 6) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await main();
+    } catch (e) {
+      console.error(`run failed (attempt ${attempt} of ${attempts}):`, e instanceof Error ? e.message : e);
+      if (attempt >= attempts) process.exit(1);
+      await new Promise((resolve) => setTimeout(resolve, 30_000));
+    }
+  }
+}
+
+withRetries();

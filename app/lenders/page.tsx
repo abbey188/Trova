@@ -6,6 +6,8 @@
 // The section has its own pages: one per issuer group (/lenders/ondo, /lenders/xstocks, …) and one
 // per token (/lenders/<mint>), both served by app/lenders/[slug]/page.tsx.
 
+import Link from "next/link";
+
 import { AppFrame } from "@/components/trova/frame";
 import { LIQUIDATOR_MARGIN_PCT } from "@/lib/collateral";
 import { cachedSheet } from "@/lib/collateral-cache";
@@ -49,7 +51,7 @@ export default async function LendersPage() {
               <P><b style={{ color: "var(--ink)" }}>Leaves under 1%</b> is the largest size, from $5,000 up to $25,000,000, whose round trip — buy with USDC, sell straight back — was quoted at under 1%. It is a quote, not an executed trade, and a round trip overstates what selling once costs.</P>
               <P><b style={{ color: "var(--ink)" }}>Sellable inside a 5% bonus</b> is the largest measured size a liquidator could sell and still keep {LIQUIDATOR_MARGIN_PCT} point of a 5% liquidation bonus. A liquidation only happens if selling the collateral costs less than the bonus paid for doing it. Each token&apos;s file shows other bonus levels, and the real share&apos;s largest move across a market closure.</P>
               <P><b style={{ color: "var(--ink)" }}>Issuer can</b> is read from the token&apos;s mint account on Solana. Controls like these are usual for a regulated issuer; they are listed so a lender can see them, and none of them moves a rating.</P>
-              <P>Measurements began on {new Date(sheet.measuredSince).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}, so this is days of history, not months. What a token can absorb changes with the hour and the day; the sheet shows the latest stored measurement for each session. Nothing here is a recommendation, and a lender adds its own margin.</P>
+              <P>Measurements began on {new Date(sheet.measuredSince).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}, so this is days of history, not months. What a token can absorb changes with the hour and the day; the sheet shows the latest stored measurement for each session. Nothing here is a recommendation, and a lender adds its own margin. <Link href="/status" style={{ color: "var(--ink)" }}>Which days were measured, and how completely</Link>.</P>
             </section>
           </>
         )}
