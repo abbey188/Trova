@@ -245,7 +245,8 @@ export function LenderCard({ mint, gap }: { mint: string; gap?: AssetDetail["wee
       <p style={{ margin: "11px 0 0", fontSize: 11, lineHeight: 1.5, color: "var(--ink-faint)" }}>
         A liquidation only happens if selling the collateral costs less than the bonus paid for doing it.
         {threshold != null && cap && gap ? ` Threshold = 100% − ${bonus}% bonus − ${(cap.roundTripPct ?? 0).toFixed(2)}% exit cost − ${gap.maxPct.toFixed(1)}% gap, over ${gap.closures} closures.` : ""}
-        {" "}Measured facts, not a recommendation: a lender adds its own margin.
+        {" "}Measured facts, not a recommendation: a lender adds its own margin.{" "}
+        <a href="/lenders" style={{ color: "var(--ink-soft)", fontWeight: 600 }}>Every token, as one sheet</a>
       </p>
     </Panel>
   );
