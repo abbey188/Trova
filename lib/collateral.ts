@@ -113,7 +113,7 @@ function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerC
     assetId: r.asset_id,
     assetClass: r.asset_class,
     // A ticker is not an issuer (older snapshots stored the token's own symbol as its label).
-    issuer: backpackIssued ? "Backpack Securities" : r.issuer && r.issuer.toUpperCase() !== r.symbol.toUpperCase() && r.issuer !== "Unknown" ? r.issuer : "Not reported",
+    issuer: backpackIssued ? "Backpack Securities" : r.issuer && r.issuer.toUpperCase() !== r.symbol.toUpperCase() && r.issuer !== "Unknown" && !r.issuer.includes(":") ? r.issuer : "Not reported",
     instrumentClass: r.instrument_class,
     redemption: r.stock_variant_tier,
     speculative: r.speculative,

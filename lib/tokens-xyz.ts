@@ -203,7 +203,9 @@ export function resolveIssuer(v: TxzVariant): string {
   // That names the token, not who issued it.
   const names = (s: string) => s.trim().toUpperCase() !== v.symbol.trim().toUpperCase();
   if (v.label && names(v.label)) return v.label;
-  const tag = v.tags?.find((t) => !t.startsWith("curated:") && names(t));
+  // Tags with a colon are classifications ("curated:etfs", "category:equity"), never an issuer. Skipping
+  // only "curated:" let "category:equity" through as the issuer of 45 tokens on 2026-10-13.
+  const tag = v.tags?.find((t) => !t.includes(":") && names(t));
   if (tag) return tag;
   // Issuer symbol conventions: xStocks "TSLAx", Ondo "TSLAon".
   if (/[A-Z]on$/.test(v.symbol)) return "Ondo";
