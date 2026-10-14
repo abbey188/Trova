@@ -130,8 +130,8 @@ export function TradeSheet({
   const rawIn = from ? from.rawAmount : toRaw(debounced, 6);
 
   const quote = useQuery({
-    queryKey: ["quote", inputMint, target?.mint, rawIn],
-    queryFn: () => api<Quote>(`/api/quote?inputMint=${inputMint}&outputMint=${target.mint}&amount=${rawIn}&slippageBps=${from ? 100 : 50}`),
+    queryKey: ["quote", inputMint, target?.mint, rawIn, address ?? null],
+    queryFn: () => api<Quote>(`/api/quote?inputMint=${inputMint}&outputMint=${target.mint}&amount=${rawIn}&slippageBps=${from ? 100 : 50}${address ? `&taker=${address}` : ""}`),
     enabled: open && !!target && !!rawIn && rawIn !== "0" && inputMint !== target.mint,
     staleTime: 15_000,
     refetchInterval: 20_000,
@@ -579,8 +579,8 @@ export function SellSheet({ open, onClose, assetName, assetId, logoUrl, from }: 
   const units = Number(rawIn) / 10 ** from.decimals;
   const worth = (from.valueUsd * Number(pct)) / 100;
   const quote = useQuery({
-    queryKey: ["quote", from.mint, USDC, rawIn],
-    queryFn: () => api<Quote>(`/api/quote?inputMint=${from.mint}&outputMint=${USDC}&amount=${rawIn}&slippageBps=100`),
+    queryKey: ["quote", from.mint, USDC, rawIn, connected?.account?.address ?? null],
+    queryFn: () => api<Quote>(`/api/quote?inputMint=${from.mint}&outputMint=${USDC}&amount=${rawIn}&slippageBps=100${connected?.account?.address ? `&taker=${connected.account.address}` : ""}`),
     enabled: open && rawIn !== "0",
     staleTime: 15_000,
     refetchInterval: 20_000,

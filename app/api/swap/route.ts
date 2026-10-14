@@ -60,6 +60,21 @@ export async function POST(request: Request) {
       return Response.json({ status: "unavailable", error: "Jupiter is unavailable right now. Try again in a moment." }, { status: 409 });
     }
 
+    // Asked with the wallet attached, the market-maker route can refuse what it quoted without one:
+    // measured 2026-10-14 after the US close, TSLAon quoted at 0.36% with no wallet and, with one,
+    // "Trading is not available outside of market hours". Building the trade on pools then would have
+    // filled from empty pools — about 12% lost on $500 — under a quote that promised 0.36%. So a
+    // refusal from the market makers is passed on, never quietly replaced by pools.
+    if (ORDER_ROUTE_ENABLED && !order.ok && order.reason === "market-closed") {
+      return Response.json({ status: "market-closed", error: "This token does not trade while the US market is shut. Try again when it opens." }, { status: 409 });
+    }
+    if (ORDER_ROUTE_ENABLED && !order.ok && leg.ok) {
+      const indicative = await orderQuote(inputMint, outputMint, amountRaw);
+      if (indicative.ok && preferOrder(leg.quote, indicative.quote)) {
+        return Response.json({ status: "no-route", error: "Market makers quoted this but will not fill it for your wallet right now, and through pools it would return far less. Trova will not build that trade." }, { status: 409 });
+      }
+    }
+
     if (preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null) && order.ok && order.quote.transaction && order.quote.requestId) {
       return Response.json({
         status: "ok",

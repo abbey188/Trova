@@ -19,6 +19,11 @@ export async function GET(request: Request) {
   const outputMint = p.get("outputMint") ?? "";
   const amountRaw = p.get("amount") ?? "";
   const slippageBps = Number(p.get("slippageBps") ?? 50);
+  // Optional: the connected wallet's public address. With it, the market-maker route answers for
+  // THIS wallet — which can differ from its open quote (Ondo tokens refuse wallets outside US market
+  // hours) — so the sheet shows what will actually execute. Never a signature (principle 1).
+  const takerRaw = p.get("taker");
+  const taker = takerRaw && isSolanaAddress(takerRaw) ? takerRaw : undefined;
 
   if (!isSolanaAddress(inputMint) || !isSolanaAddress(outputMint)) {
     return Response.json({ error: "inputMint and outputMint must be Solana addresses." }, { status: 400 });
@@ -37,7 +42,7 @@ export async function GET(request: Request) {
     // Both routes, because the trade executes on whichever returns clearly more (see /api/swap).
     const [leg, order, decimals] = await Promise.all([
       quoteDetailed(inputMint, outputMint, amountRaw, { slippageBps, withFee: true, fresh: true }),
-      orderQuote(inputMint, outputMint, amountRaw, { fresh: true }),
+      orderQuote(inputMint, outputMint, amountRaw, { fresh: true, taker }),
       getMintDecimals([inputMint, outputMint]).catch(() => new Map<string, number>()),
     ]);
     const ui = (raw: string, mint: string) => {
@@ -49,6 +54,15 @@ export async function GET(request: Request) {
     // price, so there is no quote to show rather than a misleading one.
     if (ORDER_ROUTE_ENABLED && !order.ok && order.reason === "unavailable") {
       return Response.json({ status: "unavailable", inputMint, outputMint, amount: amountRaw });
+    }
+    // Asked for a wallet, the quote mirrors what /api/swap will do: if the market makers refuse this
+    // wallet, there is no trade to show — not a pool fill the user never agreed to.
+    if (taker && !order.ok && order.reason === "market-closed") {
+      return Response.json({ status: "market-closed", inputMint, outputMint, amount: amountRaw });
+    }
+    if (taker && !order.ok && leg.ok) {
+      const indicative = await orderQuote(inputMint, outputMint, amountRaw);
+      if (indicative.ok && preferOrder(leg.quote, indicative.quote)) return Response.json({ status: "no-route", inputMint, outputMint, amount: amountRaw });
     }
     const viaOrder = preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null);
     if (!leg.ok && !viaOrder) {
