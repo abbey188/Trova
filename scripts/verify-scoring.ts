@@ -310,6 +310,18 @@ check("a market-maker-filled token with empty pools is tradable when its measure
   assert.ok(s.exit.score > pools.exit.score);
 });
 
+check("depth is the lowest capacity across recent in-hours sessions; tradability reads the latest", () => {
+  const latest = { ...measured("open", rung(5_000, 0.3), rung(50_000, 0.3), rung(250_000, 0.3), rung(1_000_000, 0.3)), takenAt: "2026-10-13T14:00:00Z" };
+  const thin = { ...measured("open", rung(5_000, 0.3), rung(50_000, 0.4), rung(250_000, 2.4)), takenAt: "2026-10-12T18:00:00Z" };
+  const s = scoreVariant(variant({}), { measuredExit: latest, recentExits: [latest, thin] });
+  assert.equal(s.exit.components.capacityUsd, 50_000);
+  assert.equal(s.exit.components.capacitySessions, 2);
+  assert.equal(s.routable, true);
+  // A night session never enters the in-hours depth.
+  const night = { ...measured("closed", rung(5_000, 0.3)), takenAt: "2026-10-13T03:00:00Z" };
+  assert.equal(scoreVariant(variant({}), { measuredExit: latest, recentExits: [latest, night] }).exit.components.capacityUsd, 1_000_000);
+});
+
 check("capacity is the largest size measured under 1%, and stops at the first size over it", () => {
   const s = scoreVariant(variant({}), { measuredExit: measured("open", rung(5_000, 0.45), rung(50_000, 1.14), rung(250_000, 0.2)) });
   assert.equal(s.exit.components.capacityUsd, 5_000);

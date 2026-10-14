@@ -31,7 +31,12 @@ import type {
   MeasuredExit, ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
-export const METHOD_VERSION = "v4.1-2026-10-13";
+export const METHOD_VERSION = "v4.2-2026-10-14";
+
+// v4.2: depth is the LOWEST capacity measured across the last three in-hours sessions, not the latest.
+// What leaves under 1% changes through the day: TSLAx left $50,000 late on 12 Oct and $25M early on
+// 13 Oct. Scoring the latest made a token's grade depend on what time the run reached it; the lowest
+// recent reading is what a holder can count on. Tradability still reads the latest measurement.
 
 // v4.1: a measured exit is the direct answer to "can I get out", so when one exists it carries most
 // of Exit; activity, holders and fill quality are indirect signals of the same thing and share the
@@ -198,6 +203,8 @@ export interface ScoreContext {
   historyDays?: number;
   /** The stored exit measurement to score from (lib/exit-store.ts). Absent → pool depth is used. */
   measuredExit?: MeasuredExit | null;
+  /** The last few in-hours measurements, newest first; depth is the lowest capacity among them. */
+  recentExits?: MeasuredExit[];
 }
 
 export interface MeasuredFacts {
@@ -205,8 +212,10 @@ export interface MeasuredFacts {
   tradable: boolean;
   /** Cost of the $5,000 round trip in %, or null when there was no route. */
   costPct: number | null;
-  /** Largest measured size under CAPACITY_COST_PCT, 0 when none. */
+  /** Largest measured size under CAPACITY_COST_PCT, 0 when none — the lowest across recent sessions. */
   capacityUsd: number;
+  /** How many in-hours sessions the capacity was read across (1 when only the latest counts). */
+  sessions: number;
   filledBy: "pools" | "market-maker" | null;
 }
 
@@ -216,22 +225,35 @@ export interface MeasuredFacts {
  * a fact about the hour, so it never scores — and a measurement taken while the market was shut only
  * counts when it actually quoted, since a token that trades at 3am certainly trades.
  */
-export function measuredFacts(m?: MeasuredExit | null): MeasuredFacts | null {
+function capacityOf(m: MeasuredExit): number {
+  let capacityUsd = 0;
+  for (const r of [...m.rungs].sort((a, b) => a.usdSize - b.usdSize)) {
+    if (r.status === "ok" && r.roundTripPct != null && r.roundTripPct < CAPACITY_COST_PCT) capacityUsd = r.usdSize;
+    else if (r.status === "ok" || r.status === "no-route") break;
+  }
+  return capacityUsd;
+}
+
+/** An in-hours ladder whose $5,000 rung is an answer about the token (a quote or a clear no route). */
+const answers = (m: MeasuredExit) => {
+  const rule = m.rungs.find((r) => r.usdSize === RULE_SIZE_USD);
+  return m.session === "open" && !!rule && (rule.status === "ok" || rule.status === "no-route");
+};
+
+export function measuredFacts(m?: MeasuredExit | null, recent: MeasuredExit[] = []): MeasuredFacts | null {
   if (!m) return null;
   const rule = m.rungs.find((r) => r.usdSize === RULE_SIZE_USD);
   if (!rule || (rule.status !== "ok" && rule.status !== "no-route")) return null;
   if (m.session === "closed" && rule.status !== "ok") return null;
 
   const costPct = rule.status === "ok" ? rule.roundTripPct : null;
-  let capacityUsd = 0;
-  for (const r of [...m.rungs].sort((a, b) => a.usdSize - b.usdSize)) {
-    if (r.status === "ok" && r.roundTripPct != null && r.roundTripPct < CAPACITY_COST_PCT) capacityUsd = r.usdSize;
-    else if (r.status === "ok" || r.status === "no-route") break;
-  }
+  // Depth: the lowest capacity among the latest ladder and the recent in-hours ones that answer.
+  const across = [m, ...recent.filter((r) => r !== m && r.takenAt !== m.takenAt && answers(r))];
   return {
     tradable: costPct != null && costPct < MAX_TRADABLE_COST_PCT,
     costPct,
-    capacityUsd,
+    capacityUsd: Math.min(...across.map(capacityOf)),
+    sessions: across.length,
     filledBy: rule.liquidity ?? null,
   };
 }
@@ -290,6 +312,7 @@ function exitPillar(v: TxzVariant, measured: MeasuredFacts | null): PillarScore<
     execution: exec == null ? null : round(clamp(exec)),
     measured: measured != null,
     capacityUsd: measured?.capacityUsd ?? null,
+    capacitySessions: measured?.sessions ?? null,
     roundTripPct: measured?.costPct ?? null,
     filledBy: measured?.filledBy ?? null,
   };
@@ -321,7 +344,7 @@ export function reportedInputs(v: TxzVariant, ctx: ScoreContext = {}): { key: st
 export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore {
   const instrument = classifyInstrument(v, ctx);
   const ownership = ownershipPillar(v, instrument);
-  const measured = measuredFacts(ctx.measuredExit);
+  const measured = measuredFacts(ctx.measuredExit, ctx.recentExits);
   const exit = exitPillar(v, measured);
   const advisory = v.advisory ?? null;
   const status = advisory?.status;

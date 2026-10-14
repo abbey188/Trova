@@ -13,6 +13,9 @@ import type { ExitQuote, MeasuredExit } from "./types";
 
 /** A measurement older than this no longer describes the market; the score falls back to pools. */
 export const MEASUREMENT_MAX_AGE_DAYS = 4; // spans a weekend plus a Monday holiday
+/** How many in-hours sessions the score's depth looks across, and how far back it may reach for them. */
+export const RECENT_SESSIONS = 3;
+const RECENT_WINDOW_DAYS = 8;
 
 export interface ExitMeasurementRow {
   mint: string;
@@ -29,6 +32,8 @@ export interface ExitMeasurementRow {
 }
 
 export interface StoredExit {
+  /** The last RECENT_SESSIONS in-hours ladders, newest first — what the score's depth is read across. */
+  recentOpen: MeasuredExit[];
   /** Latest in-hours measurement — the one the score reads. */
   scored: MeasuredExit | null;
   /** Latest measurement taken while the US market was shut. */
@@ -83,10 +88,12 @@ function latestPerMint(rows: ExitMeasurementRow[]): Map<string, StoredExit> {
   // Oldest first, so a newer day simply replaces an older one.
   for (const key of [...byKey.keys()].sort((a, b) => a.split("|")[2].localeCompare(b.split("|")[2]))) {
     const [mint, session] = key.split("|");
-    const entry = out.get(mint) ?? out.set(mint, { scored: null, closed: null }).get(mint)!;
+    const entry = out.get(mint) ?? out.set(mint, { scored: null, closed: null, recentOpen: [] }).get(mint)!;
     const measured = group(byKey.get(key)!);
-    if (session === "open") entry.scored = measured;
-    else entry.closed = measured;
+    if (session === "open") {
+      entry.scored = measured;
+      entry.recentOpen = [measured, ...entry.recentOpen].slice(0, RECENT_SESSIONS);
+    } else entry.closed = measured;
   }
   return out;
 }
@@ -100,12 +107,24 @@ export async function latestMeasurements(mints?: string[]): Promise<Map<string, 
     const filter = mints ? `&mint=in.(${[...new Set(mints)].join(",")})` : "";
     const rows = await selectRows<ExitMeasurementRow>(
       "exit_measurements",
-      `select=mint,symbol,snapshot_date,taken_at,session,size_usd,status,round_trip_pct,liquidity,pools_round_trip_pct,route_labels&snapshot_date=gte.${sinceDate(MEASUREMENT_MAX_AGE_DAYS)}${filter}&order=id`,
+      `select=mint,symbol,snapshot_date,taken_at,session,size_usd,status,round_trip_pct,liquidity,pools_round_trip_pct,route_labels&snapshot_date=gte.${sinceDate(RECENT_WINDOW_DAYS)}${filter}&order=id`,
     );
-    return latestPerMint(rows);
+    // The latest ladders must be recent to score from; older in-hours ladders only feed recentOpen.
+    const fresh = sinceDate(MEASUREMENT_MAX_AGE_DAYS);
+    const out = latestPerMint(rows);
+    for (const e of out.values()) {
+      if (e.scored && e.scored.takenAt.slice(0, 10) < fresh) e.scored = null;
+      if (e.closed && e.closed.takenAt.slice(0, 10) < fresh) e.closed = null;
+    }
+    return out;
   } catch {
     return new Map();
   }
+}
+
+/** The in-hours ladders the score's depth is read across: empty when the latest is not in-hours. */
+export function recentForScore(stored?: StoredExit | null): MeasuredExit[] {
+  return stored?.scored ? stored.recentOpen : [];
 }
 
 /** The measurements taken on one date — what a re-score of that day's snapshot should read. */

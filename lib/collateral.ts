@@ -51,6 +51,9 @@ export interface CollateralRow {
   closed: SessionExit | null;
   /** Largest in-hours size a liquidator could sell and keep LIQUIDATOR_MARGIN_PCT of a 5% bonus. */
   liquidatableAt5Usd: number | null;
+  /** The lowest in-hours capacity under 1% across the last few market sessions, and how many. */
+  weakestUnder1Usd: number | null;
+  recentSessions: number;
 }
 
 function bracket(rungs: SessionExit["rungs"], thresholdPct: number): { under: number | null; over: number | null } {
@@ -105,6 +108,12 @@ async function latestSnapshot(filter = ""): Promise<{ date: string | null; rows:
   return { date: latest.snapshot_date, rows };
 }
 
+function weakest(stored: StoredExit | undefined): { weakestUnder1Usd: number | null; recentSessions: number } {
+  const sessions = (stored?.recentOpen ?? []).map(sessionExit).filter((s): s is SessionExit => !!s && s.status5k !== "not-quoted");
+  if (sessions.length === 0) return { weakestUnder1Usd: null, recentSessions: 0 };
+  return { weakestUnder1Usd: Math.min(...sessions.map((s) => s.under1Usd ?? 0)), recentSessions: sessions.length };
+}
+
 function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerControls | null, backpackIssued = false): CollateralRow {
   const open = sessionExit(stored?.scored);
   return {
@@ -123,6 +132,7 @@ function toRow(r: SnapshotRow, stored: StoredExit | undefined, controls: IssuerC
     open,
     closed: sessionExit(stored?.closed),
     liquidatableAt5Usd: liquidatable(open, 5).sizeUsd,
+    ...weakest(stored),
   };
 }
 
@@ -261,7 +271,7 @@ export function sheetCsv(sheet: CollateralSheet): string {
     "symbol", "mint", "company", "asset_class", "issuer", "redemption", "speculative", "ownership_score_0_100",
     "issuer_can_move_tokens", "issuer_can_pause", "paused_now", "issuer_can_freeze", "issuer_can_mint", "new_accounts_frozen", "hook_program_attached", "transfer_fee_bps",
     "in_hours_measured_at_utc", "in_hours_5k_round_trip_pct", "in_hours_largest_size_under_1pct_usd", "in_hours_largest_size_under_5pct_usd", "in_hours_filled_by",
-    "liquidatable_inside_5pct_bonus_usd",
+    "liquidatable_inside_5pct_bonus_usd", "in_hours_lowest_size_under_1pct_recent_usd", "in_hours_sessions_considered",
     "out_of_hours_measured_at_utc", "out_of_hours_5k_status", "out_of_hours_5k_round_trip_pct", "out_of_hours_largest_size_under_1pct_usd",
   ];
   const lines = sheet.rows.map((r) => [
@@ -269,7 +279,7 @@ export function sheetCsv(sheet: CollateralSheet): string {
     yn(r.controls?.canSeize), yn(r.controls?.canPause), yn(r.controls?.paused), yn(r.controls?.canFreeze), yn(r.controls?.canMint),
     yn(r.controls?.newAccountsFrozen), yn(r.controls ? r.controls.hookProgram != null : null), r.controls?.transferFeeBps ?? "",
     r.open?.takenAt ?? "", num(r.open?.cost5kPct), r.open?.under1Usd ?? "", r.open?.under5Usd ?? "", r.open?.filledBy ?? "",
-    r.liquidatableAt5Usd ?? "",
+    r.liquidatableAt5Usd ?? "", r.weakestUnder1Usd ?? "", r.recentSessions,
     r.closed?.takenAt ?? "", r.closed?.status5k ?? "", num(r.closed?.cost5kPct), r.closed?.under1Usd ?? "",
   ].map(cell).join(","));
   return [head.join(","), ...lines].join("\n") + "\n";

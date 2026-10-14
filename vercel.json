@@ -1,13 +1,65 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/exit?slice=1", "schedule": "40 13 * * 1-5" },
-    { "path": "/api/cron/exit?slice=2", "schedule": "40 14 * * 1-5" },
-    { "path": "/api/cron/exit?slice=3", "schedule": "40 15 * * 1-5" },
-    { "path": "/api/cron/exit?slice=4", "schedule": "40 16 * * 1-5" },
-    { "path": "/api/cron/exit?slice=5", "schedule": "40 17 * * 1-5" },
-    { "path": "/api/cron/exit?slice=6", "schedule": "40 18 * * 1-5" },
-    { "path": "/api/cron/exit?slice=7", "schedule": "10 2 * * *" },
-    { "path": "/api/cron/snapshot", "schedule": "30 21 * * *" }
+    {
+      "path": "/api/cron/exit?slice=open-13",
+      "schedule": "40 13 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-14",
+      "schedule": "40 14 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-15",
+      "schedule": "40 15 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-16",
+      "schedule": "40 16 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-17",
+      "schedule": "40 17 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-18",
+      "schedule": "40 18 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=open-19",
+      "schedule": "40 19 * * 1-5"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-0",
+      "schedule": "10 0 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-1",
+      "schedule": "10 1 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-2",
+      "schedule": "10 2 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-3",
+      "schedule": "10 3 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-4",
+      "schedule": "10 4 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-5",
+      "schedule": "10 5 * * *"
+    },
+    {
+      "path": "/api/cron/exit?slice=shut-6",
+      "schedule": "10 6 * * *"
+    },
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "30 21 * * *"
+    }
   ]
 }

@@ -141,7 +141,7 @@ export default async function DocsPage() {
 
         <article style={{ flexGrow: 1, minWidth: 0, maxWidth: 860, display: "flex", flexDirection: "column", gap: 38 }}>
           <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v4.1</span>
+            <span style={{ fontSize: 11, letterSpacing: 0.6, textTransform: "uppercase", color: "var(--ink-faint)", fontWeight: 700 }}>The method · v4.2</span>
             <h1 style={{ ...DISPLAY, margin: 0, fontSize: "clamp(30px, 5vw, 44px)", fontWeight: 700, letterSpacing: -1, lineHeight: 1.05 }}>How Trova rates a tokenized stock</h1>
             <P>Trova rates every tokenized stock on Solana on two things: <b style={{ color: "var(--ink)" }}>Ownership</b>, what you&apos;d actually own, and <b style={{ color: "var(--ink)" }}>Exit</b>, whether you can get back out. Together they make the Trova Score. Every rating shows its working, and every rating updates as information becomes public.</P>
           </header>
@@ -186,7 +186,7 @@ export default async function DocsPage() {
           <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <H2 id="exit" n={4}>Exit</H2>
             <P>Four measures — depth, activity (trades and volume), holders, and fill quality where tokens.xyz reports it — each scored against fixed anchors. Fixed, not recomputed live, so a token&apos;s score only moves when the token changes. <b style={{ color: "var(--ink)" }}>A measured depth carries 60% of Exit</b>, because it is the direct answer to “can I get out”; the other measures are indirect signs of the same thing and share the remaining 40%. Where no measurement is stored, all of them count equally.</P>
-            <P><b style={{ color: "var(--ink)" }}>Depth is measured, not read off a pool.</b> Each day Trova quotes a real round trip — buy, then sell straight back — from $5,000 up to $25,000,000, on the better of Jupiter&apos;s two routes, and scores the largest size that leaves for under 1%. The scale is absolute, not a ranking. Many tokens are filled by market makers answering a request, not by pools; their pools can be nearly empty while $250,000 leaves for half a percent. Until v4.0 Trova read pool depth alone and rated those tokens as if they could not be left.</P>
+            <P><b style={{ color: "var(--ink)" }}>Depth is measured, not read off a pool.</b> Each day Trova quotes a real round trip — buy, then sell straight back — from $5,000 up to $25,000,000, on the better of Jupiter&apos;s two routes, and scores the largest size that leaves for under 1%. What leaves changes through the day, so the score takes the lowest figure from the last three market sessions — what a holder can count on, not the best moment. The scale is absolute, not a ranking. Many tokens are filled by market makers answering a request, not by pools; their pools can be nearly empty while $250,000 leaves for half a percent. Until v4.0 Trova read pool depth alone and rated those tokens as if they could not be left.</P>
             <Table head={["Score", "Largest size leaving under 1%"]} num={[0, 1]} rows={[
               [0, "None measured"],
               [25, usd(500)],

@@ -10,7 +10,7 @@ import { explain } from "./explain";
 import { getCompanyLogos, tickerLogo } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
-import { forScore, latestMeasurements } from "./exit-store";
+import { forScore, latestMeasurements, recentForScore } from "./exit-store";
 import { sellNow } from "./jupiter";
 import { getMintFacts, withScaledAmounts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -331,6 +331,7 @@ export async function buildPortfolio(wallet: string): Promise<PortfolioSummary> 
       issuerConfirmed: backpackMints?.has(v.mint),
       historyDays,
       measuredExit: forScore(measured.get(v.mint)),
+      recentExits: recentForScore(measured.get(v.mint)),
     });
     const ranked = rankVariants(variants, ctxFor);
     const mine = ranked.find((r) => r.variant.mint === h.mint);

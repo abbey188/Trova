@@ -9,7 +9,7 @@
 //   2. Movement    — which grades change, in which direction, and for which issuers?
 //   3. Review      — the most widely held tokens, before and after, to be read by a person.
 
-import { forScore, latestMeasurements } from "../lib/exit-store";
+import { forScore, latestMeasurements, recentForScore } from "../lib/exit-store";
 import { selectRows } from "../lib/supabase-rest";
 import { METHOD_VERSION, measuredFacts, scoreVariant, type ScoreContext } from "../lib/trust-score";
 import type { TxzVariant } from "../lib/types";
@@ -34,7 +34,8 @@ async function main() {
   const scored = rows.map((r) => {
     const base: ScoreContext = { assetId: r.asset_id, canonicalSource: universe.get(r.asset_id)?.asset.canonicalMarket?.source, issuerConfirmed: r.issuer_confirmed, historyDays: 30 };
     const exit = forScore(measured.get(r.mint));
-    return { r, facts: measuredFacts(exit), session: exit?.session ?? null, v3: scoreVariant(r.raw, base), v4: scoreVariant(r.raw, { ...base, measuredExit: exit }) };
+    const recent = recentForScore(measured.get(r.mint));
+    return { r, facts: measuredFacts(exit, recent), session: exit?.session ?? null, v3: scoreVariant(r.raw, base), v4: scoreVariant(r.raw, { ...base, measuredExit: exit, recentExits: recent }) };
   });
   const withMeasure = scored.filter((s) => s.facts);
 

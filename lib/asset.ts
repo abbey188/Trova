@@ -7,7 +7,7 @@ import { aboutFor } from "./about";
 import { logoFor } from "./logos";
 import { choosePrice } from "./price";
 import { getVariantHistory } from "./history";
-import { forScore, latestMeasurements } from "./exit-store";
+import { forScore, latestMeasurements, recentForScore } from "./exit-store";
 import { exitLadder } from "./jupiter";
 import { getMintFacts } from "./token-extensions";
 import { equityFeed, getPythPrices } from "./pyth";
@@ -155,6 +155,7 @@ export async function buildAssetDetail(
     issuerConfirmed: backpackMints?.has(v.mint),
     historyDays,
     measuredExit: forScore(measured.get(v.mint)),
+    recentExits: recentForScore(measured.get(v.mint)),
   });
 
   const ranked = rankVariants(variants, ctxFor);

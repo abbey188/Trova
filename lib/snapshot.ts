@@ -4,7 +4,7 @@
 
 import { pool } from "./async";
 import { getBackpackIssuedMints, getSecurities } from "./backpack";
-import { forScore, latestMeasurements, measurementsOn } from "./exit-store";
+import { forScore, latestMeasurements, measurementsOn, recentForScore } from "./exit-store";
 import { insertRow, selectRows, upsertRows } from "./supabase-rest";
 import { getMintFacts } from "./token-extensions";
 import { getVariants, resolveIssuer } from "./tokens-xyz";
@@ -113,6 +113,7 @@ export async function collectSnapshots(opts: { date?: string; concurrency?: numb
           canonicalSource: asset.canonicalMarket?.source,
           issuerConfirmed: backpackMints?.has(v.mint),
           measuredExit: forScore(measured.get(v.mint)),
+          recentExits: recentForScore(measured.get(v.mint)),
         });
         rows.set(v.mint, toRow(v, s, { date, assetId: asset.assetId, assetClass }));
       }

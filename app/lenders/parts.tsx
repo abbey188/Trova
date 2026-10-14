@@ -106,6 +106,7 @@ export function SheetTable({ rows }: { rows: CollateralRow[] }) {
               <td style={{ ...TD, ...NUM, textAlign: "right", fontWeight: 700 }}>
                 {r.open ? (r.open.under1Usd ? money(r.open.under1Usd) : "none") : "—"}
                 {r.open?.filledBy === "market-maker" && <div style={{ fontSize: 10, fontWeight: 500, color: "var(--ink-faint)", fontFamily: "inherit" }}>market maker</div>}
+                {r.recentSessions > 1 && r.weakestUnder1Usd !== r.open?.under1Usd && <div style={{ fontSize: 10, fontWeight: 600, color: "var(--grade-c)", fontFamily: "inherit" }}>lowest of last {r.recentSessions}: {r.weakestUnder1Usd ? money(r.weakestUnder1Usd) : "none"}</div>}
               </td>
               <td style={{ ...TD, ...NUM, textAlign: "right" }}>{r.open ? (r.liquidatableAt5Usd ? money(r.liquidatableAt5Usd) : "none") : "—"}</td>
               <td style={{ ...TD, color: "var(--ink-soft)" }}>{outOfHours(r)}</td>
