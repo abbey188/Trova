@@ -31,7 +31,7 @@ const SCORE_NOISE = 3;
 const COLUMNS = [
   "snapshot_date", "mint", "asset_id", "symbol", "score", "grade",
   "ownership:structure", "exit:market",
-  "liquidity_usd", "holders", "volume_24h_usd", "routable",
+  "liquidity_usd", "holders", "volume_24h_usd", "routable", "method_version",
 ].join(",");
 
 interface Row {
@@ -47,7 +47,11 @@ interface Row {
   holders: number | null;
   volume_24h_usd: number | null;
   routable: boolean;
+  method_version: string;
 }
+
+/** "v4" from "v4.1-2026-10-13". Scores are comparable within a major version of the method, not across. */
+const methodMajor = (v: string) => v.split(".")[0];
 
 const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const num = (v: number | null | undefined) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -151,13 +155,19 @@ export async function getVariantHistory(mints: string[], days = 30): Promise<Map
   const weekStart = isoDay(Date.now() - 7 * 86_400_000);
   for (const [mint, list] of byMint) {
     const points = list.map(toPoint);
+    // The trend is read only across snapshots scored by the same major version of the method. v3
+    // scored Exit on pool depth and v4 on a measured exit, so a token that went from D 40 to B 75 on
+    // 13 Oct 2026 did not change; the method did. Across versions the points are still returned for the
+    // chart, but no "up 35 points" or "grade changed" is claimed from them.
+    const major = methodMajor(list[list.length - 1].method_version);
+    const comparable = list.filter((r) => methodMajor(r.method_version) === major).map(toPoint);
     out.set(mint, {
       mint,
       assetId: list[0].asset_id,
       symbol: list[0].symbol,
       points,
-      trend: summariseTrend(points),
-      trend7d: summariseTrend(points.filter((p) => p.date >= weekStart)),
+      trend: summariseTrend(comparable),
+      trend7d: summariseTrend(comparable.filter((p) => p.date >= weekStart)),
     });
   }
   return out;
