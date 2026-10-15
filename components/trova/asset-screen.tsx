@@ -670,7 +670,9 @@ function RatingHistoryCard({ top }: { top: AssetVariantView }) {
   const ex = pts.map((p) => p.exit);
   const y = (v: number) => 130 - v * 1.2;
   const line = (vals: number[]) => vals.map((v, i) => `${((i / (vals.length - 1)) * 1000).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-  const say = (vals: number[], name: string) => (Math.min(...vals) === Math.max(...vals) ? `${name} held at ${vals[0]} every day` : `${name} moved between ${Math.min(...vals)} and ${Math.max(...vals)}`);
+  // Ranges are read since the last change of method: across it, a move is the method, not the token.
+  const since = methodChangeIndex(pts) ?? 0;
+  const say = (all: number[], name: string) => { const vals = all.slice(since); return Math.min(...vals) === Math.max(...vals) ? `${name} held at ${vals[0]} ${since ? "since the method changed" : "every day"}` : `${name} moved between ${Math.min(...vals)} and ${Math.max(...vals)}${since ? " since the method changed" : ""}`; };
   const d = (s: string) => new Date(`${s}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
   return (
     <Panel style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 12 }}>

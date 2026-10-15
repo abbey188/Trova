@@ -100,7 +100,9 @@ function HistoryChart({ points }: { points: HistoryPoint[] }) {
   );
 }
 
-function historyLine(points: HistoryPoint[]): string | null {
+function historyLine(all: HistoryPoint[]): string | null {
+  // Ranges are read since the last change of method: across it, a move is the method, not the token.
+  const points = all.slice(methodChangeIndex(all) ?? 0);
   if (points.length < 2) return null;
   const range = (k: "ownership" | "exit") => {
     const v = points.map((p) => p[k]);
