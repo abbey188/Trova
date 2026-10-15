@@ -67,6 +67,7 @@ function toPoint(r: Row): HistoryPoint {
     holders: num(r.holders),
     volume24hUsd: num(r.volume_24h_usd),
     routable: r.routable,
+    method: methodMajor(r.method_version),
   };
 }
 

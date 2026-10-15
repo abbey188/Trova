@@ -11,6 +11,7 @@ import { CompanyLogo, GradePill, ScoreRing } from "@/components/trova/kit";
 import { buildAssetDetail } from "@/lib/asset";
 import type { Driver, Scenario } from "@/lib/explain";
 import { GRADE_CUTOFFS } from "@/lib/trust-score";
+import { methodChangeIndex, methodChangeNote } from "@/lib/method-change";
 import type { HistoryPoint } from "@/lib/types";
 
 export const revalidate = 120;
@@ -88,10 +89,12 @@ function HistoryChart({ points }: { points: HistoryPoint[] }) {
           {[0, 0.5, 1].map((f) => <line key={f} x1="0" x2={W} y1={6 + f * (H - 12)} y2={6 + f * (H - 12)} stroke="var(--track)" vectorEffect="non-scaling-stroke" />)}
           <polyline points={line("ownership")} fill="none" stroke="var(--grade-b)" strokeWidth="2.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
           <polyline points={line("exit")} fill="none" stroke="var(--ink)" strokeWidth="2.4" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          {methodChangeIndex(points) != null && <line x1={x(methodChangeIndex(points)!)} x2={x(methodChangeIndex(points)!)} y1="0" y2={H} stroke="var(--ink-faint)" strokeWidth="1.2" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
         </svg>
         <div style={{ display: "flex", fontSize: 10, color: "var(--ink-faint)" }}>
           <span>{fmt(points[0].date)}</span><span style={{ flexGrow: 1 }} /><span>{fmt(points.at(-1)!.date)} · checked daily</span>
         </div>
+        {methodChangeNote(points) && <span style={{ fontSize: 11, lineHeight: 1.5, color: "var(--ink-faint)" }}>Dashed line — {methodChangeNote(points)}</span>}
       </div>
     </div>
   );

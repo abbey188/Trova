@@ -396,6 +396,8 @@ export interface HistoryPoint {
   holders: number | null;
   volume24hUsd: number | null;
   routable: boolean;
+  /** Major version of the method that scored this day ("v3", "v4"); scores are comparable only within one. */
+  method?: string;
 }
 
 /** What a history series says, as facts about the move that happened — never an expected one. */

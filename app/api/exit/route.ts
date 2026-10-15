@@ -10,9 +10,9 @@
 // Separate from /api/asset because quoting is the one slow part of that page: up to five quotes per
 // rung under a ten-per-ten-seconds limit. The screen renders the rating first and fills this in.
 
-import { latestMeasurements } from "@/lib/exit-store";
+import { latestMeasurements, usSession } from "@/lib/exit-store";
 import { isSolanaAddress } from "@/lib/helius";
-import { exitCeiling, exitLadder } from "@/lib/jupiter";
+import { exitCeiling, exitLadder, shutForWallets } from "@/lib/jupiter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,6 +60,11 @@ export async function GET(request: Request) {
       }
     }
 
+    // With the market shut, a wallet-free quote can promise what no wallet could execute (Ondo tokens).
+    if (usSession() === "closed" && (await shutForWallets(mint))) {
+      const shut = (sizes ?? LIVE_SIZES).map((usdSize) => ({ usdSize, status: "market-closed", roundTripPct: null, routable: false, blockedOn: null, routeLabels: [], liquidity: null, poolsRoundTripPct: null }));
+      return Response.json(body(mint, shut, { source: "live", quotedAt: Date.now(), session: "closed", closedSession: null }), { headers: { "Cache-Control": "public, s-maxage=120, stale-while-revalidate=300" } });
+    }
     const ladder = await exitLadder(mint, sizes ?? LIVE_SIZES);
     return Response.json(body(mint, ladder.map((l) => ({
       usdSize: l.usdSize,

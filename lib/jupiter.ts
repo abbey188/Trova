@@ -20,6 +20,8 @@
 // because the US market is shut, which is a fourth answer and must never be shown as a loss.
 // Referral on v2 is `referralAccount` / `referralFee`, not `feeAccount` / `platformFeeBps`.
 
+import { generateKeyPairSync } from "node:crypto";
+
 const KEY = process.env.JUPITER_API_KEY?.trim();
 const BASE = KEY ? "https://api.jup.ag/swap/v1" : "https://lite-api.jup.ag/swap/v1";
 const AUTH: HeadersInit = KEY ? { "x-api-key": KEY } : {};
@@ -251,6 +253,33 @@ export async function orderQuote(
     transaction: raw.transaction ?? null,
     requestId: raw.requestId ?? null,
   } };
+}
+
+/**
+ * A wallet address nobody holds the key to — generated per process, never funded, never used to sign.
+ * Attached to one quote so the market-maker route answers as it would for a real wallet: measured
+ * 2026-10-15 after the US close, it quoted TSLAon to a request with no wallet and refused one with a
+ * wallet ("Trading is not available outside of market hours"). Prices are NOT taken from these
+ * quotes: for an empty wallet Jupiter pays the network fee and takes it out of the trade, about 3% on $5.
+ */
+const PROBE_TAKER = (() => {
+  const raw = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "der" }).subarray(-32);
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = BigInt("0x" + Buffer.from(raw).toString("hex"));
+  let out = "";
+  while (n > 0n) { out = ALPHABET[Number(n % 58n)] + out; n /= 58n; }
+  for (const b of raw) { if (b === 0) out = "1" + out; else break; }
+  return out;
+})();
+
+/**
+ * Whether the token refuses a real wallet right now because the US market is shut — the one thing a
+ * wallet-free quote cannot tell. One quote; false when the order route is not configured or answers.
+ */
+export async function shutForWallets(mint: string): Promise<boolean> {
+  if (!ORDER_BASE || mint === USDC_MINT) return false;
+  const r = await orderQuote(USDC_MINT, mint, 5_000 * 10 ** USDC_DECIMALS, { taker: PROBE_TAKER });
+  return !r.ok && r.reason === "market-closed";
 }
 
 export interface BestQuote {

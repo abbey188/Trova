@@ -5,7 +5,7 @@
 // always taken. A token that fails it badly is not asked again at $50,000; one that passes it under
 // 1% is not asked at $500. Sizes that were never quoted are simply absent from the record.
 
-import { exitCost, type ExitCost } from "./jupiter";
+import { exitCost, shutForWallets, type ExitCost } from "./jupiter";
 import { lastMeasured, measuredMints, usSession, writeMeasurements, type ExitMeasurementRow } from "./exit-store";
 import { selectRows } from "./supabase-rest";
 import { RULE_SIZE_USD } from "./trust-score";
@@ -28,8 +28,14 @@ async function rung(mint: string, size: number): Promise<ExitCost> {
   return r;
 }
 
-export async function measureLadder(mint: string): Promise<ExitCost[]> {
+export async function measureLadder(mint: string, session: "open" | "closed" = usSession()): Promise<ExitCost[]> {
   const rungs: ExitCost[] = [];
+  // With the market shut, first ask whether the token would trade for a real wallet at all. Quotes
+  // without a wallet can be indicative only: until 15 Oct 2026 they recorded Ondo tokens as leaving
+  // $25M overnight when none of them could be traded then.
+  if (session === "closed" && (await shutForWallets(mint))) {
+    return [{ status: "market-closed", roundTripPct: null, routable: false, routeLabels: [], usdSize: RULE_SIZE_USD, liquidity: null, poolsRoundTripPct: null }];
+  }
   const rule = await rung(mint, RULE_SIZE_USD);
   // No answer on the rule rung: store nothing, so the next call measures this token again.
   if (rule.status === "unavailable") return [];
@@ -120,7 +126,7 @@ export async function runMeasurement(opts: { budgetMs?: number; limit?: number; 
     // Stop at the bell (or the open): the tokens left belong to the other session's run, and carrying
     // on would write over that session's measurements for today.
     if (usSession() !== session) break;
-    const rungs = await measureLadder(t.mint);
+    const rungs = await measureLadder(t.mint, session);
     opts.onToken?.(t, rungs);
     // A token Jupiter could not be reached for is left unmeasured, so the next call tries again.
     if (rungs.length === 0) continue;

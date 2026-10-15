@@ -18,6 +18,7 @@ import { SellTrigger, TradeTrigger } from "@/components/trova/trade-trigger";
 import { swapFromHolding, toOption, type SwapFrom, type TokenOption } from "@/components/trova/trade-sheet";
 import { useWalletAddress } from "@/components/trova/wallet";
 import { api } from "@/lib/client";
+import { methodChangeIndex, methodChangeNote } from "@/lib/method-change";
 import { count, usd } from "@/lib/format";
 import type { AssetDetail, AssetVariantView, MarketRow, PortfolioSummary } from "@/lib/types";
 
@@ -683,9 +684,11 @@ function RatingHistoryCard({ top }: { top: AssetVariantView }) {
         {[10, 70, 130].map((yy) => <line key={yy} x1="0" x2="1000" y1={yy} y2={yy} stroke="var(--track)" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}
         <polyline points={line(own)} fill="none" stroke="var(--grade-d)" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
         <polyline points={line(ex)} fill="none" stroke="var(--grade-a)" strokeWidth="2.4" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+        {methodChangeIndex(pts) != null && <line x1={(methodChangeIndex(pts)! / (pts.length - 1)) * 1000} x2={(methodChangeIndex(pts)! / (pts.length - 1)) * 1000} y1="0" y2="150" stroke="var(--ink-faint)" strokeWidth="1.2" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />}
       </svg>
       <div style={{ display: "flex", fontSize: 10, color: "var(--ink-faint)" }}><span>{d(pts[0].date)}</span><span style={{ flexGrow: 1 }} /><span>{d(pts[pts.length - 1].date)} · checked daily</span></div>
       <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{say(own, "Ownership")}. {say(ex, "Exit")}.</span>
+      {methodChangeNote(pts) && <span style={{ fontSize: 11, lineHeight: 1.5, color: "var(--ink-faint)" }}>Dashed line — {methodChangeNote(pts)}</span>}
     </Panel>
   );
 }
