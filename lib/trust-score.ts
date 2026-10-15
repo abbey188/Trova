@@ -31,9 +31,14 @@ import type {
   MeasuredExit, ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
-export const METHOD_VERSION = "v4.2-2026-10-14";
+export const METHOD_VERSION = "v4.3-2026-10-15";
 
-// v4.2: depth is the LOWEST capacity measured across the last three in-hours sessions, not the latest.
+// v4.3: depth is the MIDDLE capacity of the last three in-hours sessions (the lower of two, when only two
+// exist) — what the token reached in most of them. v4.2 took the lowest, and one thin window then set
+// the grade for three days: MUx left $25M under 1% on 13 and 14 Oct, but a reading near the close on
+// 12 Oct ($5,000 cost 53%) took it from B 77 to D 27. The lowest reading is still shown to lenders.
+
+// v4.2 (superseded by v4.3): depth was the LOWEST capacity across the last three in-hours sessions.
 // What leaves under 1% changes through the day: TSLAx left $50,000 late on 12 Oct and $25M early on
 // 13 Oct. Scoring the latest made a token's grade depend on what time the run reached it; the lowest
 // recent reading is what a holder can count on. Tradability still reads the latest measurement.
@@ -212,7 +217,7 @@ export interface MeasuredFacts {
   tradable: boolean;
   /** Cost of the $5,000 round trip in %, or null when there was no route. */
   costPct: number | null;
-  /** Largest measured size under CAPACITY_COST_PCT, 0 when none — the lowest across recent sessions. */
+  /** Largest measured size under CAPACITY_COST_PCT, 0 when none — the middle of the recent sessions. */
   capacityUsd: number;
   /** How many in-hours sessions the capacity was read across (1 when only the latest counts). */
   sessions: number;
@@ -247,12 +252,14 @@ export function measuredFacts(m?: MeasuredExit | null, recent: MeasuredExit[] = 
   if (m.session === "closed" && rule.status !== "ok") return null;
 
   const costPct = rule.status === "ok" ? rule.roundTripPct : null;
-  // Depth: the lowest capacity among the latest ladder and the recent in-hours ones that answer.
+  // Depth: the middle capacity among the latest ladder and the recent in-hours ones that answer (the
+  // lower one when there are two), so no single window — good or bad — sets it alone.
   const across = [m, ...recent.filter((r) => r !== m && r.takenAt !== m.takenAt && answers(r))];
+  const capacities = across.map(capacityOf).sort((a, b) => a - b);
   return {
     tradable: costPct != null && costPct < MAX_TRADABLE_COST_PCT,
     costPct,
-    capacityUsd: Math.min(...across.map(capacityOf)),
+    capacityUsd: capacities[Math.floor((capacities.length - 1) / 2)],
     sessions: across.length,
     filledBy: rule.liquidity ?? null,
   };

@@ -131,8 +131,10 @@ function liquidityFact(v: TxzVariant, s: TrovaScore, trend?: TrendSummary | null
     const cost = x.roundTripPct == null
       ? `No route for a ${money(RULE_SIZE_USD)} round trip`
       : `A ${money(RULE_SIZE_USD)} round trip costs ${x.roundTripPct.toFixed(2)}%, filled by ${by}`;
-    const across = (x.capacitySessions ?? 1) > 1 ? ` in each of the last ${x.capacitySessions} market sessions` : "";
-    const capacity = (x.capacityUsd ?? 0) > 0 ? `measured under 1% up to ${money(x.capacityUsd!)}${across}` : `no size measured under 1%${across ? ` in all of the last ${x.capacitySessions} market sessions` : ""}`;
+    const n = x.capacitySessions ?? 1;
+    // The score reads the middle of n sessions: a size reached in at least n − ⌊(n−1)/2⌋ of them.
+    const across = n >= 3 ? ` in at least ${n - Math.floor((n - 1) / 2)} of the last ${n} market sessions` : n === 2 ? " in both of the last 2 market sessions" : "";
+    const capacity = (x.capacityUsd ?? 0) > 0 ? `measured under 1% up to ${money(x.capacityUsd!)}${across}` : `no size measured under 1%${across ? ` in most of the last ${n} market sessions` : ""}`;
     return `${cost}; ${capacity} — ${band(x.liquidity)}.`;
   }
   const liq = v.market.liquidity ?? 0;

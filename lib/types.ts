@@ -144,8 +144,8 @@ export interface ExitComponents {
   execution: number | null;     // tokens.xyz executionScore when reported
   /** True when `liquidity` was scored from a measured exit rather than from pool depth. */
   measured?: boolean;
-  /** Largest measured size that round-trips for under 1%, in USD (0 when none did) — the lowest
-   *  across the last few in-hours sessions. */
+  /** Largest measured size that round-trips for under 1%, in USD (0 when none did) — the middle
+   *  reading of the last few in-hours sessions. */
   capacityUsd?: number | null;
   /** How many in-hours sessions capacityUsd was read across. */
   capacitySessions?: number | null;

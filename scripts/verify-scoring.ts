@@ -310,7 +310,7 @@ check("a market-maker-filled token with empty pools is tradable when its measure
   assert.ok(s.exit.score > pools.exit.score);
 });
 
-check("depth is the lowest capacity across recent in-hours sessions; tradability reads the latest", () => {
+check("depth is the middle capacity of recent in-hours sessions (the lower of two); tradability reads the latest", () => {
   const latest = { ...measured("open", rung(5_000, 0.3), rung(50_000, 0.3), rung(250_000, 0.3), rung(1_000_000, 0.3)), takenAt: "2026-10-13T14:00:00Z" };
   const thin = { ...measured("open", rung(5_000, 0.3), rung(50_000, 0.4), rung(250_000, 2.4)), takenAt: "2026-10-12T18:00:00Z" };
   const s = scoreVariant(variant({}), { measuredExit: latest, recentExits: [latest, thin] });
@@ -320,6 +320,12 @@ check("depth is the lowest capacity across recent in-hours sessions; tradability
   // A night session never enters the in-hours depth.
   const night = { ...measured("closed", rung(5_000, 0.3)), takenAt: "2026-10-13T03:00:00Z" };
   assert.equal(scoreVariant(variant({}), { measuredExit: latest, recentExits: [latest, night] }).exit.components.capacityUsd, 1_000_000);
+  // Three sessions: one thin window does not set the depth (MUx, 12-14 Oct 2026).
+  const window = { ...measured("open", rung(5_000, 53)), takenAt: "2026-10-12T19:26:00Z" };
+  const middle = { ...measured("open", rung(5_000, 0.3), rung(50_000, 0.3), rung(250_000, 0.3), rung(1_000_000, 0.3)), takenAt: "2026-10-13T14:27:00Z" };
+  const three = scoreVariant(variant({}), { measuredExit: latest, recentExits: [latest, middle, window] });
+  assert.equal(three.exit.components.capacityUsd, 1_000_000);
+  assert.equal(three.exit.components.capacitySessions, 3);
 });
 
 check("capacity is the largest size measured under 1%, and stops at the first size over it", () => {
