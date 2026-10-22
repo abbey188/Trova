@@ -31,7 +31,11 @@ import type {
   MeasuredExit, ScoreFlag, StockVariantTier, OwnershipComponents, Tier, TrovaScore, TxzCanonicalMarket, TxzVariant,
 } from "./types";
 
-export const METHOD_VERSION = "v4.3-2026-10-15";
+export const METHOD_VERSION = "v4.4-2026-10-22";
+
+// v4.4: tradability, like depth, reads the middle of the last three in-hours sessions. One reading in
+// which no market maker answered marked TSLAon untradable for days ($5,000 cost 87.6% through pools at
+// 15:32 UTC on 19 Oct, against 0.4-0.5% in every other session that week).
 
 // v4.3: depth is the MIDDLE capacity of the last three in-hours sessions (the lower of two, when only two
 // exist) — what the token reached in most of them. v4.2 took the lowest, and one thin window then set
@@ -215,8 +219,10 @@ export interface ScoreContext {
 export interface MeasuredFacts {
   /** A $5,000 round trip was quoted and cost under MAX_TRADABLE_COST_PCT. */
   tradable: boolean;
-  /** Cost of the $5,000 round trip in %, or null when there was no route. */
+  /** Cost of the $5,000 round trip in %, or null when there was no route — the LATEST reading. */
   costPct: number | null;
+  /** The middle $5,000 cost across recent sessions (Infinity = no route) — what tradability reads. */
+  typicalCostPct: number;
   /** Largest measured size under CAPACITY_COST_PCT, 0 when none — the middle of the recent sessions. */
   capacityUsd: number;
   /** How many in-hours sessions the capacity was read across (1 when only the latest counts). */
@@ -256,8 +262,12 @@ export function measuredFacts(m?: MeasuredExit | null, recent: MeasuredExit[] = 
   // lower one when there are two), so no single window — good or bad — sets it alone.
   const across = [m, ...recent.filter((r) => r !== m && r.takenAt !== m.takenAt && answers(r))];
   const capacities = across.map(capacityOf).sort((a, b) => a - b);
+  const ruleCost = (x: MeasuredExit) => { const r = x.rungs.find((g) => g.usdSize === RULE_SIZE_USD); return r?.status === "ok" && r.roundTripPct != null ? r.roundTripPct : Infinity; };
+  const costs = across.map(ruleCost).sort((a, b) => a - b);
+  const typicalCostPct = costs[Math.floor((costs.length - 1) / 2)];
   return {
-    tradable: costPct != null && costPct < MAX_TRADABLE_COST_PCT,
+    tradable: typicalCostPct < MAX_TRADABLE_COST_PCT,
+    typicalCostPct,
     costPct,
     capacityUsd: capacities[Math.floor((capacities.length - 1) / 2)],
     sessions: across.length,
@@ -401,8 +411,8 @@ export function scoreVariant(v: TxzVariant, ctx: ScoreContext = {}): TrovaScore 
     : !rated ? notRatedReason
     : measured ? (
         measured.tradable ? undefined
-        : measured.costPct == null ? "No route for a $5,000 round trip"
-        : `A $5,000 round trip costs ${measured.costPct.toFixed(1)}% — over the ${MAX_TRADABLE_COST_PCT}% Trova allows`)
+        : !Number.isFinite(measured.typicalCostPct) ? (measured.sessions > 1 ? `No route for a $5,000 round trip in most of the last ${measured.sessions} market sessions` : "No route for a $5,000 round trip")
+        : `A $5,000 round trip costs ${measured.typicalCostPct.toFixed(1)}%${measured.sessions > 1 ? ` in most of the last ${measured.sessions} market sessions` : ""} — over the ${MAX_TRADABLE_COST_PCT}% Trova allows`)
     : liquidityUsd < MIN_LIQUIDITY_USD ? "Liquidity under $50k — a trade would move the price"
     : !traded24h ? "No trades in the last 24 hours"
     : undefined;

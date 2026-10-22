@@ -72,6 +72,11 @@ export function referral(): { feeAccount?: string; platformFeeBps?: number } {
 
 type Fetched = { ok: true; body: RawQuote } | { ok: false; reason: NoQuote };
 const MARKET_CLOSED = /outside of market hours/i;
+// "Failed to get quotes" is the market-maker system not answering, not market makers declining: on the
+// same tokens it alternates with real quotes minutes apart. It is a missing answer, retried and never
+// stored, so pools cannot stand in for it (TSLAon read 87.6% through pools on 19 Oct after one).
+const NO_ANSWER = /failed to get quotes/i;
+const refusal = (text: string): NoQuote => (MARKET_CLOSED.test(text) ? "market-closed" : NO_ANSWER.test(text) ? "unavailable" : "no-route");
 
 // Quotes move on market time, not page time — a minute-old exit cost is still true, and caching is
 // what keeps us inside the rate limit.
@@ -154,15 +159,15 @@ async function getJson(url: string, { fresh = false }: { fresh?: boolean } = {})
       if (res.ok) {
         const body = (await res.json()) as RawQuote;
         const out: Fetched = body.error || !body.outAmount
-          ? { ok: false, reason: MARKET_CLOSED.test(body.error ?? "") ? "market-closed" : "no-route" }
+          ? { ok: false, reason: refusal(body.error ?? "") }
           : { ok: true, body };
-        cache.set(url, { at: Date.now(), value: out });
+        if (!(!out.ok && out.reason === "unavailable")) cache.set(url, { at: Date.now(), value: out });
         return out;
       }
       if (res.status >= 400 && res.status < 500) {
         const text = await res.text().catch(() => "");
-        const out: Fetched = { ok: false, reason: MARKET_CLOSED.test(text) ? "market-closed" : "no-route" };
-        cache.set(url, { at: Date.now(), value: out });
+        const out: Fetched = { ok: false, reason: refusal(text) };
+        if (out.reason !== "unavailable") cache.set(url, { at: Date.now(), value: out });
         return out;
       }
     } catch {

@@ -328,6 +328,19 @@ check("depth is the middle capacity of recent in-hours sessions (the lower of tw
   assert.equal(three.exit.components.capacitySessions, 3);
 });
 
+check("one reading with no market maker does not make a token untradable (TSLAon, 19 Oct 2026)", () => {
+  const bad = { ...measured("open", rung(5_000, 87.6)), takenAt: "2026-10-19T15:32:00Z" };
+  const ok1 = { ...measured("open", rung(5_000, 0.51), rung(50_000, 0.51)), takenAt: "2026-10-16T17:26:00Z" };
+  const ok2 = { ...measured("open", rung(5_000, 0.42), rung(50_000, 0.42)), takenAt: "2026-10-15T15:29:00Z" };
+  const s = scoreVariant(variant({ market: EMPTY_POOLS }), { measuredExit: bad, recentExits: [bad, ok1, ok2] });
+  assert.equal(s.routable, true);
+  // Two bad sessions of three do make it untradable.
+  const bad2 = { ...measured("open", rung(5_000, null, "no-route")), takenAt: "2026-10-16T17:26:00Z" };
+  const t = scoreVariant(variant({ market: EMPTY_POOLS }), { measuredExit: bad, recentExits: [bad, bad2, ok2] });
+  assert.equal(t.routable, false);
+  assert.match(t.notRoutableReason!, /in most of the last 3 market sessions/);
+});
+
 check("capacity is the largest size measured under 1%, and stops at the first size over it", () => {
   const s = scoreVariant(variant({}), { measuredExit: measured("open", rung(5_000, 0.45), rung(50_000, 1.14), rung(250_000, 0.2)) });
   assert.equal(s.exit.components.capacityUsd, 5_000);
