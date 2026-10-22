@@ -72,7 +72,9 @@ export function toRows(target: MeasureTarget, rungs: ExitCost[], date: string, s
 }
 
 /** The tokens measured first in every run, however short: the ones a holder or lender is most likely to ask about. */
-const ALWAYS_FIRST = 150;
+// Was 150, which is more than a day of scheduled slices reaches (~130 a session): the rotation behind
+// it never ran, and the tail went unmeasured until it expired. 40 leaves most of each run to the rotation.
+const ALWAYS_FIRST = 40;
 
 /**
  * The tokens to measure, in the order to measure them. The first ALWAYS_FIRST — tradable, then by

@@ -4,7 +4,7 @@
 
 import { pool } from "./async";
 import { getBackpackIssuedMints, getSecurities } from "./backpack";
-import { forScore, latestMeasurements, measurementsOn, recentForScore } from "./exit-store";
+import { forScore, latestMeasurements, recentForScore } from "./exit-store";
 import { insertRow, selectRows, upsertRows } from "./supabase-rest";
 import { getMintFacts } from "./token-extensions";
 import { getVariants, resolveIssuer } from "./tokens-xyz";
@@ -213,9 +213,9 @@ interface StoredRow {
  */
 export async function rescoreSnapshots(date: string) {
   const errors: SnapshotResult["errors"] = [];
-  // Only measurements taken that day: a date with none re-scores on pool depth, as it was scored.
+  // What had been measured by that day, within the same window the live score uses.
   const [measured, stored, securities, assets] = await Promise.all([
-    measurementsOn(date),
+    latestMeasurements(undefined, date),
     selectRows<StoredRow>(
       "variant_snapshots",
       `select=mint,symbol,asset_id,asset_class,issuer_confirmed,flags,score,grade,method_version,raw&snapshot_date=eq.${date}&order=id`,
@@ -232,6 +232,7 @@ export async function rescoreSnapshots(date: string) {
       canonicalSource: asset?.canonicalMarket?.source,
       issuerConfirmed: r.issuer_confirmed,
       measuredExit: forScore(measured.get(r.mint)),
+      recentExits: recentForScore(measured.get(r.mint)),
     };
     const s = scoreVariant(r.raw, ctx);
     const from = `${r.grade}(${r.score ?? "–"})`, to = `${s.grade}(${s.score ?? "–"})`;

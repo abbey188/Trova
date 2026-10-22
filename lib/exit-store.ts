@@ -12,10 +12,14 @@ import { selectRows, upsertRows } from "./supabase-rest";
 import type { ExitQuote, MeasuredExit } from "./types";
 
 /** A measurement older than this no longer describes the market; the score falls back to pools. */
-export const MEASUREMENT_MAX_AGE_DAYS = 4; // spans a weekend plus a Monday holiday
+// How old a measurement may be and still be scored from. Was 4 days: with partial daily coverage and a
+// weekend, 350 of 581 tokens fell outside it by 21 Oct 2026 and were scored on pool depth again, which
+// put ~250 market-maker-filled Ondo tokens back at grade D. A two-week-old quote is a better guide to a
+// token a market maker fills than its pools ever are; the rotation keeps measurements well inside this.
+export const MEASUREMENT_MAX_AGE_DAYS = 14;
 /** How many in-hours sessions the score's depth looks across, and how far back it may reach for them. */
 export const RECENT_SESSIONS = 3;
-const RECENT_WINDOW_DAYS = 8;
+const RECENT_WINDOW_DAYS = 14;
 
 export interface ExitMeasurementRow {
   mint: string;
@@ -101,16 +105,19 @@ function latestPerMint(rows: ExitMeasurementRow[]): Map<string, StoredExit> {
 /**
  * The latest stored measurement for each mint (or for every mint when none are named). Never throws.
  */
-export async function latestMeasurements(mints?: string[]): Promise<Map<string, StoredExit>> {
+export async function latestMeasurements(mints?: string[], asOf?: string): Promise<Map<string, StoredExit>> {
   if (mints && mints.length === 0) return new Map();
+  // asOf (YYYY-MM-DD) re-scores a past day: only what had been measured by then counts.
+  const ref = asOf ? Date.parse(`${asOf}T23:59:59Z`) : Date.now();
+  const back = (days: number) => new Date(ref - days * 86_400_000).toISOString().slice(0, 10);
   try {
-    const filter = mints ? `&mint=in.(${[...new Set(mints)].join(",")})` : "";
+    const filter = (mints ? `&mint=in.(${[...new Set(mints)].join(",")})` : "") + (asOf ? `&snapshot_date=lte.${asOf}` : "");
     const rows = await selectRows<ExitMeasurementRow>(
       "exit_measurements",
-      `select=mint,symbol,snapshot_date,taken_at,session,size_usd,status,round_trip_pct,liquidity,pools_round_trip_pct,route_labels&snapshot_date=gte.${sinceDate(RECENT_WINDOW_DAYS)}${filter}&order=id`,
+      `select=mint,symbol,snapshot_date,taken_at,session,size_usd,status,round_trip_pct,liquidity,pools_round_trip_pct,route_labels&snapshot_date=gte.${back(RECENT_WINDOW_DAYS)}${filter}&order=id`,
     );
     // The latest ladders must be recent to score from; older in-hours ladders only feed recentOpen.
-    const fresh = sinceDate(MEASUREMENT_MAX_AGE_DAYS);
+    const fresh = back(MEASUREMENT_MAX_AGE_DAYS);
     const out = latestPerMint(rows);
     for (const e of out.values()) {
       if (e.scored && e.scored.takenAt.slice(0, 10) < fresh) e.scored = null;
