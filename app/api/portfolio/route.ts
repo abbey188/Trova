@@ -2,12 +2,14 @@
 
 import { isSolanaAddress } from "@/lib/helius";
 import { buildPortfolio, DEMO_WALLET } from "@/lib/portfolio";
+import { overLimit, tooMany } from "@/lib/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
+  if (overLimit(request, "portfolio", 20)) return tooMany();
   const wallet = new URL(request.url).searchParams.get("wallet")?.trim() ?? "";
   // ?wallet=demo is the demo portfolio shown before a wallet connects.
   if (wallet !== DEMO_WALLET && !isSolanaAddress(wallet)) {

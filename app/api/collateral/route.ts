@@ -6,6 +6,7 @@
 // every figure is reported, read from the mint, or measured. See lib/collateral.ts.
 
 import { buildCollateralSheet, sheetCsv } from "@/lib/collateral";
+import { overLimit, tooMany } from "@/lib/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export const maxDuration = 60;
 const CACHE = "public, s-maxage=600, stale-while-revalidate=3600";
 
 export async function GET(request: Request) {
+  if (overLimit(request, "collateral", 30)) return tooMany();
   try {
     const sheet = await buildCollateralSheet();
     if (new URL(request.url).searchParams.get("format") === "csv") {

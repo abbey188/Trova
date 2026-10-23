@@ -2,6 +2,7 @@
 // its Trova grade so a search result can be judged, not just found.
 
 import { searchMarket } from "@/lib/markets";
+import { overLimit, tooMany } from "@/lib/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export const maxDuration = 30;
 const MAX_QUERY = 64;
 
 export async function GET(request: Request) {
+  if (overLimit(request, "search", 60)) return tooMany();
   const q = (new URL(request.url).searchParams.get("q") ?? "").trim();
   if (!q) return Response.json({ query: "", results: [] });
   if (q.length > MAX_QUERY) {

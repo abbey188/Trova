@@ -14,7 +14,9 @@
 // not the client's. The wallet shows the simulated result before the user approves anything.
 
 import { isSolanaAddress } from "@/lib/helius";
+import { issueExecuteToken, overLimit, tooMany } from "@/lib/guard";
 import { ORDER_ROUTE_ENABLED, orderQuote, preferOrder, quoteDetailed, swapTransaction } from "@/lib/jupiter";
+import { checkSwapTransaction } from "@/lib/tx-check";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +24,11 @@ export const maxDuration = 30;
 
 const MAX_RAW = 2n ** 64n - 1n;
 
+/** 3%: enough for a volatile token; more than this and a user is mostly paying for being front-run. */
+const MAX_SLIPPAGE_BPS = 300;
+
 export async function POST(request: Request) {
+  if (overLimit(request, "swap", 20)) return tooMany();
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -44,8 +50,8 @@ export async function POST(request: Request) {
   if (!/^\d{1,20}$/.test(amountRaw) || BigInt(amountRaw) <= 0n || BigInt(amountRaw) > MAX_RAW) {
     return Response.json({ error: "amount must be a positive integer in base units." }, { status: 400 });
   }
-  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 1_000) {
-    return Response.json({ error: "slippageBps must be an integer from 1 to 1000." }, { status: 400 });
+  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > MAX_SLIPPAGE_BPS) {
+    return Response.json({ error: `slippageBps must be an integer from 1 to ${MAX_SLIPPAGE_BPS}.` }, { status: 400 });
   }
 
   try {
@@ -76,11 +82,19 @@ export async function POST(request: Request) {
     }
 
     if (preferOrder(leg.ok ? leg.quote : null, order.ok ? order.quote : null) && order.ok && order.quote.transaction && order.quote.requestId) {
+      const verdict = checkSwapTransaction(order.quote.transaction, userPublicKey, "order");
+      if (!verdict.ok) {
+        console.error("swap refused (order route):", verdict.reason);
+        return Response.json({ status: "unavailable", error: "Trova could not verify this trade, so it was not built. Try again." }, { status: 502 });
+      }
+      const executeToken = issueExecuteToken(order.quote.requestId, userPublicKey);
+      if (!executeToken) return Response.json({ status: "unavailable", error: "Trades through market makers are not configured." }, { status: 503 });
       return Response.json({
         status: "ok",
         route: "order",
         swapTransaction: order.quote.transaction,
         requestId: order.quote.requestId,
+        executeToken,
         inAmount: order.quote.inAmount,
         outAmount: order.quote.outAmount,
         priceImpactPct: 0,
@@ -96,6 +110,11 @@ export async function POST(request: Request) {
     }
     const tx = await swapTransaction({ quote: leg.quote, userPublicKey });
     if (!tx) return Response.json({ status: "unavailable", error: "Could not build the transaction. Try again." }, { status: 502 });
+    const verdict = checkSwapTransaction(tx, userPublicKey, "pools");
+    if (!verdict.ok) {
+      console.error("swap refused (pools route):", verdict.reason);
+      return Response.json({ status: "unavailable", error: "Trova could not verify this trade, so it was not built. Try again." }, { status: 502 });
+    }
 
     return Response.json({
       status: "ok",

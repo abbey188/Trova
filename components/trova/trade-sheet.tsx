@@ -479,7 +479,7 @@ function SendButton({ account, disabled, phase, setPhase, request, label, note }
   async function go() {
     try {
       setPhase({ kind: "building" });
-      const built = await api<{ swapTransaction: string; route?: "pools" | "order"; requestId?: string }>("/api/swap", {
+      const built = await api<{ swapTransaction: string; route?: "pools" | "order"; requestId?: string; executeToken?: string }>("/api/swap", {
         method: "POST",
         body: JSON.stringify({ ...request, userPublicKey: account.address }),
       });
@@ -490,7 +490,7 @@ function SendButton({ account, disabled, phase, setPhase, request, label, note }
         const [signed] = await signOnly.modifyAndSignTransactions([tx as Parameters<typeof signOnly.modifyAndSignTransactions>[0][number]]);
         const done = await api<{ signature: string }>("/api/swap/execute", {
           method: "POST",
-          body: JSON.stringify({ signedTransaction: getBase64EncodedWireTransaction(signed as Transaction), requestId: built.requestId }),
+          body: JSON.stringify({ signedTransaction: getBase64EncodedWireTransaction(signed as Transaction), requestId: built.requestId, executeToken: built.executeToken, userPublicKey: account.address }),
         });
         signature = done.signature;
       } else {

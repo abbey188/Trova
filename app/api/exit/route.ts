@@ -13,6 +13,7 @@
 import { latestMeasurements, usSession } from "@/lib/exit-store";
 import { isSolanaAddress } from "@/lib/helius";
 import { exitCeiling, exitLadder, shutForWallets } from "@/lib/jupiter";
+import { overLimit, tooMany } from "@/lib/guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ function body(mint: string, ladder: Rung[], extra: Record<string, unknown>) {
 }
 
 export async function GET(request: Request) {
+  if (overLimit(request, "exit", 30)) return tooMany();
   const p = new URL(request.url).searchParams;
   const mint = p.get("mint") ?? "";
   if (!isSolanaAddress(mint)) return Response.json({ error: "mint must be a Solana address." }, { status: 400 });

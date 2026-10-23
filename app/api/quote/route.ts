@@ -4,6 +4,7 @@
 // route, and — the part no other front end shows — what it would cost to leave again at this size,
 // measured by quoting the sale straight back. Read-only; nothing here asks for a signature.
 
+import { overLimit, tooMany } from "@/lib/guard";
 import { getMintDecimals, isSolanaAddress } from "@/lib/helius";
 import { bestQuote, ORDER_ROUTE_ENABLED, orderQuote, preferOrder, quoteDetailed } from "@/lib/jupiter";
 
@@ -14,6 +15,7 @@ export const maxDuration = 30;
 const MAX_RAW = 2n ** 64n - 1n;
 
 export async function GET(request: Request) {
+  if (overLimit(request, "quote", 60)) return tooMany();
   const p = new URL(request.url).searchParams;
   const inputMint = p.get("inputMint") ?? "";
   const outputMint = p.get("outputMint") ?? "";
@@ -34,8 +36,8 @@ export async function GET(request: Request) {
   if (!/^\d{1,20}$/.test(amountRaw) || BigInt(amountRaw) <= 0n || BigInt(amountRaw) > MAX_RAW) {
     return Response.json({ error: "amount must be a positive integer in base units." }, { status: 400 });
   }
-  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 1_000) {
-    return Response.json({ error: "slippageBps must be an integer from 1 to 1000." }, { status: 400 });
+  if (!Number.isInteger(slippageBps) || slippageBps < 1 || slippageBps > 300) {
+    return Response.json({ error: "slippageBps must be an integer from 1 to 300." }, { status: 400 });
   }
 
   try {

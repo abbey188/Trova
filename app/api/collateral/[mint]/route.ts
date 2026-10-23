@@ -3,13 +3,15 @@
 // closure, and the capacity history since measurements began. Unknown mint → 404.
 
 import { buildCollateralFile } from "@/lib/collateral";
+import { overLimit, tooMany } from "@/lib/guard";
 import { isSolanaAddress } from "@/lib/helius";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET(_request: Request, { params }: { params: Promise<{ mint: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ mint: string }> }) {
+  if (overLimit(request, "collateral-file", 60)) return tooMany();
   const { mint } = await params;
   if (!isSolanaAddress(mint)) return Response.json({ error: "mint must be a Solana address." }, { status: 400 });
   try {
