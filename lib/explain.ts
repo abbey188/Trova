@@ -127,15 +127,18 @@ function depthPhrase(v: TxzVariant, s: TrovaScore): string {
 function liquidityFact(v: TxzVariant, s: TrovaScore, trend?: TrendSummary | null): string {
   const x = s.exit.components;
   if (x.measured) {
+    // Two different readings, said as two sentences: the LATEST $5,000 round trip, and the depth the
+    // score uses — the middle of the last few market sessions. Run together ("costs 1.36%; under 1% up
+    // to $25M") they read as a contradiction.
     const by = x.filledBy === "market-maker" ? "a market maker's quote" : "on-chain pools";
-    const cost = x.roundTripPct == null
-      ? `No route for a ${money(RULE_SIZE_USD)} round trip`
-      : `A ${money(RULE_SIZE_USD)} round trip costs ${x.roundTripPct.toFixed(2)}%, filled by ${by}`;
+    const latest = x.roundTripPct == null
+      ? `Latest ${money(RULE_SIZE_USD)} round trip: no route.`
+      : `Latest ${money(RULE_SIZE_USD)} round trip: ${x.roundTripPct.toFixed(2)}%, filled by ${by}.`;
     const n = x.capacitySessions ?? 1;
     // The score reads the middle of n sessions: a size reached in at least n − ⌊(n−1)/2⌋ of them.
-    const across = n >= 3 ? ` in at least ${n - Math.floor((n - 1) / 2)} of the last ${n} market sessions` : n === 2 ? " in both of the last 2 market sessions" : "";
-    const capacity = (x.capacityUsd ?? 0) > 0 ? `measured under 1% up to ${money(x.capacityUsd!)}${across}` : `no size measured under 1%${across ? ` in most of the last ${n} market sessions` : ""}`;
-    return `${cost}; ${capacity} — ${band(x.liquidity)}.`;
+    const reached = n >= 3 ? `In at least ${n - Math.floor((n - 1) / 2)} of the last ${n} market sessions` : n === 2 ? "In both of the last 2 market sessions" : "In the latest market session";
+    const depth = (x.capacityUsd ?? 0) > 0 ? `${reached}, ${money(x.capacityUsd!)} left for under 1%` : `${reached}, no size measured left for under 1%`;
+    return `${latest} ${depth} — ${band(x.liquidity)}.`;
   }
   const liq = v.market.liquidity ?? 0;
   let fact = `${money(liq)} of on-chain depth — ${band(s.exit.components.liquidity)}`;

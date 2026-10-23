@@ -380,7 +380,8 @@ check("a measured token is explained by what was measured, not by its pool depth
   const s = scoreVariant(v, ctx);
   const e = explain(v, s, ctx, {});
   const liq = e.drivers.find((d) => d.key === "liquidity")!;
-  assert.match(liq.fact, /round trip costs 0\.40%, filled by a market maker's quote/);
+  assert.match(liq.fact, /Latest \$5k round trip: 0\.40%, filled by a market maker's quote\./);
+  assert.match(liq.fact, /\$50k left for under 1%/);
   assert.doesNotMatch(e.headline, /\$39/);
 });
 

@@ -54,6 +54,24 @@ export default async function StatusPage() {
         {!s ? <P>The record&apos;s status is unavailable right now.</P> : (
           <>
             <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <h2 style={{ ...DISPLAY, margin: 0, fontSize: 20, fontWeight: 700 }}>How fresh each rating&apos;s measurement is</h2>
+              {s.freshness.pastLimit > 0 && (
+                <div role="alert" style={{ border: "1px solid var(--danger-line)", background: "var(--danger-soft)", borderRadius: 14, padding: "12px 16px", fontSize: 13, lineHeight: 1.6, color: "var(--ink)" }}>
+                  <b>{s.freshness.pastLimit} tokens have no in-hours measurement from the last {s.freshness.limitDays} days</b> and are rated on pool depth until they are measured again — which misjudges any token a market maker fills.{s.freshness.pastLimitSample.length ? ` For example: ${s.freshness.pastLimitSample.join(", ")}.` : ""}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                {([["Under a day old", s.freshness.underOneDay], ["1 to 7 days", s.freshness.oneToSeven], [`7 to ${s.freshness.limitDays} days`, s.freshness.sevenToLimit], [`Older than ${s.freshness.limitDays} days, or never`, s.freshness.pastLimit]] as [string, number][]).map(([label, n], i) => (
+                  <div key={label} style={{ border: "1px solid var(--hairline)", borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ ...NUM, fontSize: 24, fontWeight: 700, color: i === 3 && n > 0 ? "var(--danger)" : "var(--ink)" }}>{n}</span>
+                    <span style={{ fontSize: 12, color: "var(--ink-soft)" }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <P>The age of each token&apos;s latest in-hours measurement. Ratings read measurements up to {s.freshness.limitDays} days old; the measurement job rotates through every token, most-traded first.</P>
+            </section>
+
+            <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <h2 style={{ ...DISPLAY, margin: 0, fontSize: 20, fontWeight: 700 }}>Exit measurements</h2>
               {s.days.length === 0 ? <P>No measurement is stored yet.</P> : (
                 <div style={box}>
